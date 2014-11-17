@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="Gradle: bsaf-1.9.2">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.jdesktop.bsaf/bsaf/1.9.2/897cfa6861aacaa8f61f74f247715f00e6d2e0ae/bsaf-1.9.2.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.jdesktop.bsaf/bsaf/1.9.2/c380e5a6b1708ce4c7d80ad09f2aab6b9768bfa7/bsaf-1.9.2-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
