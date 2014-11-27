@@ -20,6 +20,8 @@ window.stillepost.webrtc = (function() {
     // local websockt information
     _localPeer, _localPort;
 
+  public.connections = connections;
+
   // This function is called by SignalingChannel.js on receiving a new signaling message
   public.handleSignalingMessage = function(message) {
     var connection = null;
@@ -49,7 +51,7 @@ window.stillepost.webrtc = (function() {
           console.log("Processed remote description from "+connection._remotePeer+":"+connection._remotePort+"- creating Answer");
           connection.pc.createAnswer(connection.localDescriptionCreated.bind(connection), logError);
         }
-      }.bind(this), logError);
+      }, logError);
     }
     // handle candidate message
     else if (message.candidate) {
@@ -61,6 +63,12 @@ window.stillepost.webrtc = (function() {
       console.log("Successfully established connection to WebSocket Server on local address "+message.peer+":"+message.port);
       _localPeer = message.peer;
       _localPort = message.port;
+    } else if (message.error) {
+      console.log("websocket server responded with error "+message.error);
+      if (connection) {
+        connection.pc.close();
+        removeConnection(connection.id);
+      }
     } else {
       console.log("Signaling channel: Received unsupported message type");
     }
@@ -112,7 +120,8 @@ window.stillepost.webrtc = (function() {
 
       channel.onclose = function() {
         console.log("data channel close");
-      }
+        removeConnection(this.id);
+      }.bind(this);
     };
 
     console.log("Start RTCPeerConnection");
@@ -161,8 +170,30 @@ window.stillepost.webrtc = (function() {
     this._dataChannel.send(data);
   };
 
+  function removeConnection(connectionId) {
+    var tmp;
+    for (var i = 0; i < connections.length; i++) {
+      tmp = connections[i];
+      if (tmp.id === connectionId) {
+        console.log("Removing webrtc connection "+connectionId);
+        connections.splice(i,1);
+      }
+    }
+  }
+
   public.createConnection = function(peer, port) {
-    var connection = new WebRTCConnection(peer, port);
+    // parse port to integer
+    var parsedPort = port;
+    if (typeof port === "string") {
+      try {
+        parsedPort = parseInt(port);
+      }
+      catch(err) {
+        console.log("Error while parsing parameter port of type string to int type");
+      }
+    }
+
+    var connection = new WebRTCConnection(peer, parsedPort);
     connection.createDataChannel();
     // firefox apparently doesn't trigger onnegotiationneeded event - need to manually create offer
     if (webrtcDetectedBrowser === "firefox") {

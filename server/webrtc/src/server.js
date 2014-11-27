@@ -41,20 +41,25 @@ wsServer.on('request', function(request) {
     console.log((new Date()) + ' Connection accepted.');
     connection.sendUTF(JSON.stringify({peer:request.socket.remoteAddress, port:request.socket.remotePort}));
     connection.on('message', function(message) {
-        if (message.type === 'utf8') {
-            console.log('Received Message: ' + message.utf8Data);
-            var msg = JSON.parse(message.utf8Data);
-            console.log("message from "+msg.peerOrigin+":"+msg.portOrigin+" to: "+msg.peer+":"+msg.port);
-            for (var i = 0; i < connections.length; i++) {
-              var conn = connections[i];
-              console.log("comparing "+msg.peer+"="+conn.socket.remoteAddress+" && "+msg.port+"="+conn.socket.remotePort);
-              if (msg.peer === conn.socket.remoteAddress && msg.port === conn.socket.remotePort) {
-                console.log("found target connection - sending data");
-                conn.sendUTF(message.utf8Data);
-                break;
-              }
-            }
+      if (message.type === 'utf8') {
+        console.log('Received Message: ' + message.utf8Data);
+        var msg = JSON.parse(message.utf8Data), found = false;
+        console.log("message from "+msg.peerOrigin+":"+msg.portOrigin+" to: "+msg.peer+":"+msg.port);
+        for (var i = 0; i < connections.length; i++) {
+          var conn = connections[i];
+          console.log("comparing "+msg.peer+"="+conn.socket.remoteAddress+" && "+msg.port+"="+conn.socket.remotePort);
+          if (msg.peer === conn.socket.remoteAddress && msg.port === conn.socket.remotePort) {
+            console.log("found target connection - sending data");
+            conn.sendUTF(message.utf8Data);
+            found = true;
+            break;
+          }
         }
+        // connection partner not found
+        if (!found) {
+          connection.sendUTF(JSON.stringify({error:"Peer Not found",webRTCConnection:msg.webRTCConnection}));
+        }
+      }
     });
     connection.on('close', function(reasonCode, description) {
         console.log((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
