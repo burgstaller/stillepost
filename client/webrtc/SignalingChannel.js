@@ -8,7 +8,7 @@ window.stillepost = window.stillepost || {};
 
 window.stillepost.signalingChannel = (function() {
 // WebRTC global configuration variables todo: change to wss after creating https server
-  var signalingServerURL = "ws://localhost:8081/";
+  var signalingServerURL = "ws://37.235.60.77:8081/";
   var signalingChannel = new WebSocket(signalingServerURL, 'signaling-protocol');
 
   signalingChannel.onerror = function () {
