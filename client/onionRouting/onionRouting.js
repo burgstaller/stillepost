@@ -80,8 +80,6 @@ window.stillepost.onion = (function() {
         console.log("AES-keys: ", keys);
         masterChain = keys;
 
-        //encrypt build command n-1 times
-
         // build onion layers of chain build information
         // {commandName: 'build', keyData:E_pn1(sym_key1),
         //      chainData:E_sym_key1(E_pn2(sym_key2) || n2Socket || n2Pub || E_sym_key2(E_pn3(sym_key) || E_pn3(..same same)))}

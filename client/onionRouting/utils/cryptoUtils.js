@@ -36,15 +36,6 @@ window.stillepost.cryptoUtils = (function() {
 			});
 	};
 
-	// todo: remove if no longer required: function only used for testing purposes - used to simulate public keys retrieved from directory server
-	public.getGeneratedRSAKeyPair = function() {
-		return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
-			return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
-				return {publicKey: JSON.stringify(exportKey), privateKey: keyPair.privateKey};
-			});
-		});
-	};
-
 	/**
 	 * Generates a list of AES-GCM keys of 256 bit length, which can be used for encryption and decryption.
 	 * @param count the amount of AES keys to be generated
@@ -137,6 +128,15 @@ window.stillepost.cryptoUtils = (function() {
 	}
 
 	// TODO: IMPORTANT - Remove following function - only used for test purposes
+	// used to simulate public keys retrieved from directory server
+	public.getGeneratedRSAKeyPair = function() {
+		return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
+			return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
+				return {publicKey: JSON.stringify(exportKey), privateKey: keyPair.privateKey};
+			});
+		});
+	};
+
 	// Decrypt with given private key - Since we fake being a node - we need to pass privkey
 	public.testDecryptAES = function(encData, key, iv, privKey) {
 		var alg = {name: "AES-GCM", iv: iv};
