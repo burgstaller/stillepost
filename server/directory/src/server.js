@@ -44,7 +44,7 @@ nodes.deleteEntry = function (socket) {
     return false;
 };
 
-server.get('/nodelist:id', function (req, res, next) {
+server.get('/nodelist/:id', function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
 
@@ -55,7 +55,7 @@ server.get('/nodelist:id', function (req, res, next) {
     res.send(200, createResponseObject("OK", nodesArray));
     next();
 });
-server.get('/heartbeat:id', function (req, res, next) {
+server.get('/heartbeat/:id', function (req, res, next) {
     var id = req.params.id;
     if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
         res.send(400, createResponseObject('Id is missing or wrong'));
@@ -70,7 +70,7 @@ server.post('/register', function (req, res, next) {
         res.send(400, createResponseObject('Required fields not present(address, port and key)'));
     }
     var genId = uuid.v4();
-    nodes.addEntry({ip: body.address, port: body.port, socket: body.address + ":" + body.port, key: body.key, lastBeat: new Date().getTime(), id:genId});
+    nodes.addEntry({ip: body.address, port: body.port, socket: {address:body.address,port:body.port}, key: body.key, lastBeat: new Date().getTime(), id:genId});
     res.send(200, createResponseObject('OK', genId));
     return next();
 });
