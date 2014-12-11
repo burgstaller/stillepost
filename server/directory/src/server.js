@@ -9,21 +9,23 @@ server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.bodyParser());
 
+var nodes = [];
+
 server.get('/getList', function (req, res, next) {
-    res.send(req.params);
-    return next();
+    res.send(JSON.stringify(nodes));
 });
 server.get('/sendHeardBeat', function (req, res, next) {
-    res.send(req.params);
-    return next();
+    // TODO
 });
 server.post('/register', function (req, res, next) {
-    res.send(req.params);
+    var body  = JSON.parse(req.body);
+    nodes.push({ip:body.address, port:body.port, key:body.key});
+    // TODO send ack
+    //res.send();
     return next();
 });
 server.get('/logout', function (req, res, next) {
-    res.send(req.params);
-    return next();
+    // TODO
 });
 
 server.listen(80, function () {
