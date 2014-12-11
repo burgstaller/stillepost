@@ -18,22 +18,22 @@ var nodes = {},
 // adds a new node to both the map and array of nodes
 // if a entry was already present for a given socket, we need to update
 nodes.addEntry = function (entry) {
-    if (typeof(nodes[entry.socket]) !== "undefined") {
+    if (typeof(nodes[getNodeKey(entry.socket)]) !== "undefined") {
         for (var i = 0; i < nodesArray.length; i++) {
-            if (nodesArray[i].socket === entry.socket)
+            if (getNodeKey(nodesArray[i].socket) === getNodeKey(entry.socket))
                 nodesArray[i] = entry;
         }
     }
     else {
         nodesArray.push(entry);
     }
-    nodes[entry.socket] = entry;
-    idRegistry[entry.id] = entry.socket;
+    nodes[getNodeKey(entry.socket)] = entry;
+    idRegistry[entry.id] = true;
 };
 
 nodes.deleteEntry = function (socket) {
     delete idRegistry[nodes[socket].id];
-    delete nodes[socket];
+    delete nodes[getNodeKey(socket)];
 
     for (var i = 0; i < nodesArray.length; i++) {
         if (nodesArray[i].socket === socket) {
@@ -69,8 +69,9 @@ server.post('/register', function (req, res, next) {
     if (typeof(body.address) === "undefined" || typeof(body.port) === "undefined" || typeof(body.key) === "undefined") {
         res.send(400, createResponseObject('Required fields not present(address, port and key)'));
     }
+
     var genId = uuid.v4();
-    nodes.addEntry({ip: body.address, port: body.port, socket: {address:body.address,port:body.port}, key: body.key, lastBeat: new Date().getTime(), id:genId});
+    nodes.addEntry({socket: {address:body.address,port:body.port}, key: body.key, lastBeat: new Date().getTime(), id:genId});
     res.send(200, createResponseObject('OK', genId));
     return next();
 });
@@ -81,7 +82,7 @@ server.post('/logout', function (req, res, next) {
 
     if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
         res.send(400, createResponseObject('Id is missing or wrong'));
-    if(typeof(nodes[socket]) === "undefined")
+    if(typeof(nodes[getNodeKey(socket)]) === "undefined")
         res.send(400, createResponseObject('No such socket registered'+socket+" "+req.query+" "+req.query.length));
     if (nodes.deleteEntry(socket))
         res.send(200, createResponseObject('OK'));
@@ -100,4 +101,8 @@ function createResponseObject(message, dataObject) {
     if (typeof(dataObject) === "undefined")
         return {msg: message};
     return {msg: message, data: dataObject};
+}
+
+function getNodeKey(socket){
+    return socket.address + '' + socket.port;
 }
