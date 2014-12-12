@@ -18,7 +18,14 @@ window.stillepost.webrtc = (function() {
     // list of all open webRTC connections
     connections = [],
     // local websockt information
-    _localPeer, _localPort;
+    _localPeer, _localPort,
+    _resolvePromise,
+    // todo: handle reject
+    _connected = new Promise(function(resolve, reject) {
+      _resolvePromise = resolve;
+    });
+
+  public.connected = _connected;
 
   public.connections = connections;
 
@@ -63,6 +70,7 @@ window.stillepost.webrtc = (function() {
       console.log("Successfully established connection to WebSocket Server on local address "+message.peer+":"+message.port);
       _localPeer = message.peer;
       _localPort = message.port;
+      _resolvePromise({address: _localPeer, port: _localPort});
     } else if (message.error) {
       console.log("websocket server responded with error "+message.error);
       if (connection) {
@@ -79,6 +87,10 @@ window.stillepost.webrtc = (function() {
     this._remotePeer = peer;
     this._remotePort = port;
     this._dataChannel = null;
+    // todo: reject handling
+    this._promise = new Promise(function(resolv,reject) {
+      this._connectionReady = resolv;
+    }.bind(this));
     this.pc = null;
     // we need a way to identify a connection
     if (id) {
@@ -107,15 +119,17 @@ window.stillepost.webrtc = (function() {
 
       channel.onopen = function () {
         console.log('Data channel opened');
-        channel.send("this is the plz-work-message");
-      };
+        this._connectionReady();
+      }.bind(this);
 
       channel.onerror = function (error) {
         console.log("Data channel error ", error);
       };
 
       channel.onmessage = function(event) {
-        console.log("Received message from " +this._remotePeer+":"+this._remotePort+" message: " + event.data);
+        var data = JSON.parse(event.data);
+        console.log("Received message from " +this._remotePeer+":"+this._remotePort+" message: ", data);
+        window.stillepost.onion.handleMessage(data, this._remotePeer, this._remotePort);
       }.bind(this);
 
       channel.onclose = function() {
@@ -167,7 +181,9 @@ window.stillepost.webrtc = (function() {
   };
 
   WebRTCConnection.prototype.send = function(data) {
-    this._dataChannel.send(data);
+    this._promise.then(function() {
+      this._dataChannel.send(JSON.stringify(data));
+    }.bind(this));
   };
 
   function removeConnection(connectionId) {
@@ -193,6 +209,16 @@ window.stillepost.webrtc = (function() {
       }
     }
 
+    // check if connection already exists and return it
+    var conn = null;
+    for (var i = 0; i < connections.length; i++) {
+      conn = connections[i];
+      if (conn._remotePeer === peer && conn._remotePort === port) {
+        return conn;
+      }
+    }
+
+    // if connection does not yet exist create a new one
     var connection = new WebRTCConnection(peer, parsedPort);
     connection.createDataChannel();
     // firefox apparently doesn't trigger onnegotiationneeded event - need to manually create offer

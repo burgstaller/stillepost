@@ -5,7 +5,7 @@ window.stillepost.cryptoUtils = (function() {
 
 	var aesAlgorithm = {name: "AES-GCM", length: 256};
 	var pubExp = new Uint8Array([1, 0, 1]);
-	var rsaAlgorithm = {name: "RSA-OAEP", modulusLength: 4096, publicExponent: pubExp, hash: {name: "SHA-256"}};
+	var rsaAlgorithm = {name: "RSA-OAEP", modulusLength: 2048, publicExponent: pubExp, hash: {name: "SHA-256"}};
 	var keyFormat = "jwk";
 	var privateRSAKey = null;
 
@@ -15,6 +15,10 @@ window.stillepost.cryptoUtils = (function() {
 	 */
 	public.generateNonce = function() {
 		return crypto.getRandomValues(new Uint8Array(16));
+	};
+
+	public.generateRandomInt32 = function() {
+		return crypto.getRandomValues(new Uint32Array(1))[0];
 	};
 
 	/**
@@ -91,6 +95,14 @@ window.stillepost.cryptoUtils = (function() {
 	public.decryptAES = function(encData, key, iv) {
 		var alg = {name: "AES-GCM", iv: iv};
 		var buffer = str2ab(encData);
+		return crypto.subtle.decrypt(alg, key, buffer).then(function(decData) {
+			return ab2str(decData);
+		});
+	};
+
+	public.decryptWrappedAES = function(encData, key, iv) {
+		var alg = {name: "AES-GCM", iv: iv};
+		var buffer = str2ab(encData);
 		return unwrapAESKey(key).then(function(unwrappedKey) {
 			return crypto.subtle.decrypt(alg, unwrappedKey, buffer).then(function(decData) {
 				return ab2str(decData);
@@ -98,11 +110,11 @@ window.stillepost.cryptoUtils = (function() {
 		});
 	};
 
-	function unwrapAESKey(wrappedKey) {
+	public.unwrapAESKey = function(wrappedKey) {
 		// Since wrapped key is string we first need to parse it to a ArrayBuffer object
 		var wrappedKeyAB = str2ab(wrappedKey);
 		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privateRSAKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
-	}
+	};
 
 	/**
 	 * Converts ArrayBuffer object to string object
@@ -110,7 +122,7 @@ window.stillepost.cryptoUtils = (function() {
 	 * @returns {string} the stringified ArrayBuffer object
 	 */
 	function ab2str(buf) {
-		return String.fromCharCode.apply(null, new Uint16Array(buf));
+		return String.fromCharCode.apply(null, new Uint8Array(buf));
 	}
 
 	/**
@@ -119,8 +131,8 @@ window.stillepost.cryptoUtils = (function() {
 	 * @returns {ArrayBuffer} the ArrayBuffer object
 	 */
 	function str2ab(str) {
-		var buf = new ArrayBuffer(str.length*2); // 2 bytes for each char
-		var bufView = new Uint16Array(buf);
+		var buf = new ArrayBuffer(str.length); // 2 bytes for each char
+		var bufView = new Uint8Array(buf);
 		for (var i=0, strLen=str.length; i < strLen; i++) {
 			bufView[i] = str.charCodeAt(i);
 		}
