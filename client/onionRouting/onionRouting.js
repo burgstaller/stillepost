@@ -6,6 +6,7 @@ window.stillepost.onion = (function() {
     chainSize = 3,
     directoryServerUrl = "http://127.0.0.1:42111",
     _masterChainCreated = null,
+    _masterChainError = null,
     _isMasterChainCreated = false,
     _uuid = null,
     _localSocket = {},
@@ -19,10 +20,18 @@ window.stillepost.onion = (function() {
   //map of all node-neighbours with socket and key info
   chainMap = {},
 
-  //generate RSA keypair and send public key to directory server
+  /**
+   *  Generate RSA keypair and send public key to directory server.
+   *  This function needs to be called initially.
+   *  The message to the directory server contains:
+   *    - Address, Port ... our local public socket information
+   *    - Public key ... the generated public key, which is valid for the current session
+   */
   initOnionSetup = function() {
     cu.getGeneratedPublicKey().then(function(pubKey) {
       console.log("Generated pubKey: "+pubKey);
+      // webrtc.connected is a Promise which is resolved upon successfully establishing a connection to the websocket server.
+      // The Promise passes information about our local public socket, which we send along with the public key to the directory-server.
       webrtc.connected.then(function(local)
       {
         var entry = {address: local.address, port: local.port};
@@ -51,6 +60,12 @@ window.stillepost.onion = (function() {
     });
   },
 
+  /**
+   *  Choose a set of nodes in the given nodeList at random. This function is used to select random chain nodes.
+   *  The amount of selected nodes is specified by the chainSize member.
+   * @param nodeList ... the nodeList retrieved from the directory-server
+   * @returns {Array} ... the selected nodes
+   */
   chooseNodes = function(nodeList) {
     var nodes = [],
       indexArray = [],
@@ -60,9 +75,12 @@ window.stillepost.onion = (function() {
     }
     while(nodes.length < chainSize) {
       var index = parseInt(Math.random() * (len+1)), found = false;
+      // we need to make sure, that we don't select oneself as a node
       if (nodeList[index].socket.address === _localSocket.address && nodeList[index].socket.port === _localSocket.port) {
         continue;
       }
+      // Since we need to ensure, that we select a specific node only once, we store already selected nodes in an array
+      // and each time check, if the random node was already selected (== is in the array).
       for (var i=0; i < indexArray.length; i++) {
         if (indexArray[i] === index) {
           found = true;
@@ -77,7 +95,11 @@ window.stillepost.onion = (function() {
     return nodes;
   },
 
-  //requests list of nodes from server and chooses nodes
+  /**
+   * This function requests list of nodes from the directory-server and chooses a set of chain nodes at random
+   * (Amount of selected nodes according to chainSize member).
+   * @returns {Promise} .. the Promise, which is resolved after node selection (selected list of node is passed as parameter).
+   */
   retrieveNodes = function() {
     return new Promise(function(resolve,reject) {
       var xhr = new XMLHttpRequest();
@@ -126,7 +148,8 @@ window.stillepost.onion = (function() {
     });
   },
 
-  //requests list of nodes, creates 'create' request and sends it to the first node in the chain (waits for ack from exit node)
+  //requests list of nodes, creates layered 'create' request and sends it to the first node in the chain.
+  // Member _masterChainCreate is the Promise, which needs to be resolved on receiving acknowledge-Message from exit node
   createChain = function(){
 
     return retrieveNodes().then(function(nodes) {
@@ -141,7 +164,7 @@ window.stillepost.onion = (function() {
 
         // build onion layers of chain build information
         // {commandName: 'build', keyData:E_pn1(sym_key1),
-        //      chainData:E_sym_key1(E_pn2(sym_key2) || n2Socket || n2Pub || E_sym_key2(E_pn3(sym_key) || E_pn3(..same same)))}
+        //      chainData:E_sym_key1(E_pn2(sym_key2) || n2Socket || E_sym_key2(E_pn3(sym_key) || E_pn3(..same same)))}
 
         // build innermost layer - exit node
         console.log("creating node layer: ",nodes[0]);
@@ -161,11 +184,11 @@ window.stillepost.onion = (function() {
                 chainId: chainIdMaster};
               console.log("created command: ", command);
 
-              //todo: send via webrtc and wait for response
               var con = new webrtc.createConnection(nodes[2].socket.address, nodes[2].socket.port);
               con.send(command);
               return new Promise(function(resolve,reject) {
                 _masterChainCreated = resolve;
+                _masterChainError = reject;
                 setTimeout(30000,function() {
                   if (!_isMasterChainCreated) {
                     reject("Create chain Timeout");
@@ -185,8 +208,13 @@ window.stillepost.onion = (function() {
     });
   },
 
+  /**
+   * Generates a random 32 bit Integer, which is used as a unique identifier for a chain.
+   * @returns chainId ... the randomly generated chainId
+   */
   createChainId = function() {
     var chainId = cu.generateRandomInt32();
+    // need to make sure it is unique
     if (chainMap[chainId]) {
       return createChainId();
     }
@@ -224,7 +252,13 @@ window.stillepost.onion = (function() {
   };
 
   /**
-   * interface function called by WEBRtc to handle an incoming onion request
+   * Interface function called by WebRTC to handle an incoming onion request.
+   * A message type is identified by the "commandName" attribute.
+   * Following commandNames are supported:
+   *  - build ... command used for chain build-up (send from chain master to exitNode)
+   *  - buildAck ... command used to acknowledge (send from exitNode to chain master)
+   *  - ajaxRequest ... command used to send an ajax-Request via the chain
+   *  - connect ... command used to connect to a specific node via the chain (The exitNode of the chain initiates a webRTC connection to the specified node)
    * @param message the message that was send via webrtc
    * @param remoteAddress Address of the remote peer who send the message
    * @param remotePort Port of the remote peer who send the message
@@ -248,21 +282,35 @@ window.stillepost.onion = (function() {
             if (decryptedJson.nodeSocket) {
               // send to next socket
               console.log("Sending build command to next node: ",decryptedJson.nodeSocket);
-              chainMap[message.chainId] = {socket: decryptedJson.nodeSocket, key: unwrappedKey};
               var chainId = createChainId();
-              chainMap[message.chainId] = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey};
+              // add entries to chainMap - which maps a chainId to a specific chain
+              // a chain consists of following information:
+              //  - node socket ... the socket of the next node in the chain,
+              //  - AES-Key ... the key with which data is en- and decrypted (shared with the creator of the chain),
+              //  - chainId .. the chainId for the next node in the chain. On Receiving the message, the next needs this chainId in order to be able to get the chain information.
+              chainMap[message.chainId] = {socket: decryptedJson.nodeSocket, key: unwrappedKey, chainId: chainId};
+              chainMap[chainId] = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainId: message.chainId};
               var ivNode1 = objToAb(decryptedJson.data.iv);
               var messageNode1 = {commandName:'build', chainId: chainId, iv: ivNode1, keyData: decryptedJson.data.keyData,
                 chainData: decryptedJson.data.chainData};
               console.log("Comman[object Object]d to send: ",messageNode1);
+              // Create webrtc connection with next node in the chain and send the data
               var con = webrtc.createConnection(decryptedJson.nodeSocket.address, decryptedJson.nodeSocket.port);
               con.send(messageNode1);
             } else {
-              // exit node logic
+              // exit node logic - respond with buildAck message
               console.log("Received build message as exit node");
+              // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
               chainMap[message.chainId] = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey};
-              //todo : return return ack-message
-
+              // In order to acknowledge a successful chain build-up we send an buildAck-command, which contains encrypted data signifying a successful build-up
+              var data = "success",
+                iv = cu.generateNonce();
+              cu.encryptAES(data,unwrappedKey,iv).then(function(encData) {
+                var con = webrtc.createConnection(remoteAddress, remotePort),
+                  command = {commandName:'buildAck', chainId: message.chainId, iv: iv, chainData: encData};
+                console.log("Exit node sending ack command: ",command);
+                con.send(command);
+              });
             }
           });
       }).catch(function(err) {
@@ -271,31 +319,49 @@ window.stillepost.onion = (function() {
       });
     }
     // Handle ack message (return message from exit node as answer to build message)
-    else if(message.commandName === "ack") {
+    // Schematic representation of layered buildAck message
+    // E_aesNode1( E_aesNode2( E_aesExitNode(confirmData), IV_exitNode ), IV_node2), IV_node1
+    else if(message.commandName === "buildAck") {
       // todo: decrypt and validate content
+      console.log("Received buildAck message command");
 
       // we received ack message as master of the chain - validate content
       if (message.chainId === chainIdMaster) {
-        var iv = objToAb(message.iv);
-        cu.decryptAES(message.chainData, masterChain[0], iv).then(function (decDataNode1) {
-          iv = objToAb(decDataNode1.iv);
-          return cu.decryptAES(decDataNode1.data, masterChain[1], iv).then(function (decDataNode2) {
-            iv = objToAb(decDataNode2.iv);
-            return cu.decryptAES(decDataNode2.data, masterChain[2], iv).then(function (decDataExitNode) {
+        var iv = objToAb(message.iv), data = null;
+        cu.decryptAES(message.chainData, masterChain[2], iv).then(function (decDataNode1) {
+          data = JSON.parse(decDataNode1);
+          iv = objToAb(data.iv);
+          console.log("decrypted first layer: ", data);
+          return cu.decryptAES(data.chainData, masterChain[1], iv).then(function (decDataNode2) {
+            data = JSON.parse(decDataNode2);
+            iv = objToAb(data.iv);
+            console.log("decrypted 2nd layer: ", data);
+            return cu.decryptAES(data.chainData, masterChain[0], iv).then(function (decDataExitNode) {
               // todo: validate decrypted data
-              console.log("Received message from exit node ",decDataExitNode);
+              console.log("Received message from exit node: ",decDataExitNode);
               _masterChainCreated();
             });
           });
+        }).catch(function(err) {
+          //todo: error handling
+          console.log("Error decrypting buildAck command at chainMaster: ",err);
+          _masterChainError(err);
         });
       }
-      // encrypt and forward ack message
+      // intermediate node logic: encrypt and forward ack message.
+      // Schematic representation of the message, which is generated.
+      // message = {data: E_aesNode(message.data, message.iv), iv: <newly generated nonce>]
       else {
-
-        var socket = chainMap[message.chainId];
-        //cu.encryptAES() {
-        //
-        //}
+        // Retrieve the chainMap entry which contains the AES-Key, Socket information of next node, the chainId for the chain node connection
+        var node = chainMap[message.chainId],
+          iv = cu.generateNonce(),
+          dataToEncrypt = {chainData: message.chainData, iv: message.iv};
+        console.log("Intermediate node encrypting data: ",dataToEncrypt);
+        cu.encryptAES(JSON.stringify(dataToEncrypt), node.key, iv).then(function(encData) {
+          var con = webrtc.createConnection(node.socket.address, node.socket.port),
+            command = {commandName: "buildAck", chainId: node.chainId, iv: iv, chainData: encData};
+          con.send(command);
+        });
 
       }
 
