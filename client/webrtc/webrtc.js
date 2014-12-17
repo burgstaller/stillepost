@@ -74,6 +74,7 @@ window.stillepost.webrtc = (function() {
     } else if (message.error) {
       console.log("websocket server responded with error "+message.error);
       if (connection) {
+        this._connectionError("WebRTC signaling server responded with error "+message.error);
         connection.pc.close();
         removeConnection(connection.id);
       }
@@ -87,17 +88,16 @@ window.stillepost.webrtc = (function() {
     this._remotePeer = peer;
     this._remotePort = port;
     this._dataChannel = null;
-    // todo: reject handling
     this._promise = new Promise(function(resolv,reject) {
       this._connectionReady = resolv;
+      this._connectionError = reject;
     }.bind(this));
     this.pc = null;
     // we need a way to identify a connection
     if (id) {
       this.id = id;
     } else {
-      // todo: create unique id
-      this.id = Math.random() * 100000;
+      this.id = crypto.getRandomValues(new Uint32Array(1))[0];
     }
 
     this.localDescriptionCreated = function (desc) {
@@ -124,16 +124,21 @@ window.stillepost.webrtc = (function() {
 
       channel.onerror = function (error) {
         console.log("Data channel error ", error);
-      };
+        this._connectionError("WebRTC DataChannel error");
+        removeConnection(this.id);
+      }.bind(this);
 
       channel.onmessage = function(event) {
-        var data = JSON.parse(event.data);
-        console.log("Received message from " +this._remotePeer+":"+this._remotePort+" message: ", data);
-        window.stillepost.onion.handleMessage(data, this._remotePeer, this._remotePort);
+        if (event.data) {
+          var data = JSON.parse(event.data);
+          console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
+          window.stillepost.onion.handleMessage(data, this._remotePeer, this._remotePort, this);
+        }
       }.bind(this);
 
       channel.onclose = function() {
         console.log("data channel close");
+        this._connectionError("WebRTC DataChannel was closed");
         removeConnection(this.id);
       }.bind(this);
     };
@@ -181,7 +186,7 @@ window.stillepost.webrtc = (function() {
   };
 
   WebRTCConnection.prototype.send = function(data) {
-    this._promise.then(function() {
+    return this._promise.then(function() {
       this._dataChannel.send(JSON.stringify(data));
     }.bind(this));
   };
