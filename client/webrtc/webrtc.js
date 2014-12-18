@@ -74,7 +74,7 @@ window.stillepost.webrtc = (function() {
     } else if (message.error) {
       console.log("websocket server responded with error "+message.error);
       if (connection) {
-        this._connectionError("WebRTC signaling server responded with error "+message.error);
+        connection._connectionError("WebRTC signaling server responded with error "+message.error);
         connection.pc.close();
         removeConnection(connection.id);
       }
@@ -125,6 +125,7 @@ window.stillepost.webrtc = (function() {
       channel.onerror = function (error) {
         console.log("Data channel error ", error);
         this._connectionError("WebRTC DataChannel error");
+        window.stillepost.onion.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
       }.bind(this);
 
@@ -139,6 +140,7 @@ window.stillepost.webrtc = (function() {
       channel.onclose = function() {
         console.log("data channel close");
         this._connectionError("WebRTC DataChannel was closed");
+        window.stillepost.onion.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
       }.bind(this);
     };
@@ -172,6 +174,12 @@ window.stillepost.webrtc = (function() {
       this.onDataChannelCreated(this._dataChannel);
     }.bind(this);
 
+    this.pc.oniceconnectionstatechange = function() {
+      if (this.pc.iceConnectionState === 'disconnected') {
+        console.log("current iceConnectionState: ",this.pc.iceConnectionState);
+      }
+    }.bind(this);
+
     connections.push(this);
   }
 
@@ -187,7 +195,14 @@ window.stillepost.webrtc = (function() {
 
   WebRTCConnection.prototype.send = function(data) {
     return this._promise.then(function() {
-      this._dataChannel.send(JSON.stringify(data));
+      return new Promise(function (resolve, reject) {
+        if (this._dataChannel.readyState === "closed") {
+          reject();
+        } else {
+          this._dataChannel.send(JSON.stringify(data));
+          resolve();
+        }
+      }.bind(this));
     }.bind(this));
   };
 
@@ -236,6 +251,14 @@ window.stillepost.webrtc = (function() {
   function logError(error) {
     console.log("error: ",error);
   }
+
+  window.onbeforeunload = function() {
+    var conn = null;
+    for (var i=0; i < connections.length; i++) {
+      conn = connections[i];
+      conn.pc.close();
+    }
+  };
 
   return public;
 })();
