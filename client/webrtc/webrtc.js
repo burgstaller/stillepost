@@ -260,9 +260,8 @@ window.stillepost.webrtc = (function() {
       conn = connections[i];
       conn.pc.close();
     }
-    if (_beforeUnload) {
+    if (_beforeUnload)
       _beforeUnload();
-    }
   };
 
   return public;
