@@ -252,11 +252,16 @@ window.stillepost.webrtc = (function() {
     console.log("error: ",error);
   }
 
+  // cleanup when browser or tab is closed
+  var _beforeUnload = window.onbeforeunload;
   window.onbeforeunload = function() {
     var conn = null;
     for (var i=0; i < connections.length; i++) {
       conn = connections[i];
       conn.pc.close();
+    }
+    if (_beforeUnload) {
+      _beforeUnload();
     }
   };
 

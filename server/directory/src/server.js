@@ -32,11 +32,11 @@ nodes.addEntry = function (entry) {
 };
 
 nodes.deleteEntry = function (socket) {
-    delete idRegistry[nodes[socket].id];
+    delete idRegistry[nodes[getNodeKey(socket)].id];
     delete nodes[getNodeKey(socket)];
 
     for (var i = 0; i < nodesArray.length; i++) {
-        if (nodesArray[i].socket === socket) {
+        if (getNodeKey(nodesArray[i].socket) === getNodeKey(socket)) {
             nodesArray.splice(i, 1);
             return true;
         }
@@ -76,16 +76,19 @@ server.post('/register', function (req, res, next) {
     return next();
 });
 server.post('/logout', function (req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var body = JSON.parse(req.body),
         id = body.id,
         socket = body.socket;
-
     if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
         res.send(400, createResponseObject('Id is missing or wrong'));
     if(typeof(nodes[getNodeKey(socket)]) === "undefined")
         res.send(400, createResponseObject('No such socket registered'+socket+" "+req.query+" "+req.query.length));
-    if (nodes.deleteEntry(socket))
-        res.send(200, createResponseObject('OK'));
+    if (nodes.deleteEntry(socket)) {
+      console.log("node logged out ",socket);
+      res.send(200, createResponseObject('OK'));
+    }
     else
         res.send(400, createResponseObject('Not registered. (Perhaps multiple logout calls)'));
     return next();
