@@ -244,7 +244,7 @@ window.stillepost.onion = (function() {
    * @param commandName ... the commandName of the message
    * @param message ... the message to send over the chain
    */
-  sendMessage = function(commandName, message) {
+  sendChainMessage = function(commandName, message) {
     var iv = cu.generateNonce();
     cu.encryptAES(JSON.stringify(message), masterChain[0], iv).then(function(encData) {
       var iv2 = cu.generateNonce();
@@ -309,15 +309,15 @@ window.stillepost.onion = (function() {
 
   public.sendMessageToRemoteChain = function(message, address, port, chainId) {
     var msg = {message: message, chainId: chainId, socket: {address: address, port: port}};
-    sendOrCreateChainMessage("remoteMessage", msg);
+    sendMessage("remoteMessage", msg);
   };
 
   //interface function to generically send a new message over the master chain
   public.sendMessage = function(message) {
-    sendOrCreateChainMessage("message",message);
+    sendMessage("message",message);
   };
 
-  function sendOrCreateChainMessage(commandName, message) {
+  function sendMessage(commandName, message) {
     // init chain
     if (!_isMasterChainCreated) {
       if (!_createChainPromise) {
@@ -326,7 +326,7 @@ window.stillepost.onion = (function() {
       _createChainPromise.then(function () {
         console.log("created Chain");
         _isMasterChainCreated = true;
-        sendMessage(commandName, message);
+        sendChainMessage(commandName, message);
       }).catch(function(err) {
         // todo: handle error
         console.log("error creating chain: ",err);
@@ -334,7 +334,7 @@ window.stillepost.onion = (function() {
       });
     } else {
       // send message over chain
-      sendMessage(commandName, message);
+      sendChainMessage(commandName, message);
     }
   }
 
@@ -386,7 +386,7 @@ window.stillepost.onion = (function() {
     },
 
     error: function(message) {
-      if (message.chainId == chainIdMaster) {
+      if (message.chainId && message.chainId == chainIdMaster) {
         console.log("Received error commandMessage - destroying chain ",message.errorMessage.error);
         _masterChainError(message.errorMessage.message);
         resetMasterChain();
@@ -410,11 +410,11 @@ window.stillepost.onion = (function() {
       } else {
         var node = chainMap[message.chainId];
         if (node) {
-          if (node.type === "decrypt") {
+          if (node.type === "decrypt" || (node.type === "exit" && message.mode !== "forward")) {
             var iv = objToAb(message.iv);
             cu.decryptAES(message.chainData, node.key, iv).then(function (decData) {
               // check if this node is an exit node
-              if (node.socket.address === remoteAddress && node.socket.port === remotePort) {
+              if (node.type === "exit") {
                 exitNode[message.commandName](message, node, decData, webRTCConnection);
               } else {
                 intermediateNode[message.commandName](message, decData, node);
@@ -511,7 +511,7 @@ window.stillepost.onion = (function() {
     build: function(message, decryptedJson, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
       console.log("Received build message as exit node ", decryptedJson);
       // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
-      chainMap[message.chainId] = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, type: "decrypt"};
+      chainMap[message.chainId] = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainId: message.chainId, type: "exit"};
       // In order to acknowledge a successful chain build-up we return a build-command message, which contains the encrypted nonce signifying a successful build-up
       var iv = cu.generateNonce();
       cu.encryptAES(JSON.stringify(decryptedJson.data), unwrappedKey, iv).then(function (encData) {
@@ -537,12 +537,15 @@ window.stillepost.onion = (function() {
 
     remoteMessage: function(message, node, content, webRTCConnection) {
       console.log("Received remote message through chain ",content);
-      var iv = cu.generateNonce();
-      cu.encryptAES("successfully responded to remote message with content"+JSON.stringify(content), node.key, iv).then(function(encData) {
-        var msg = {commandName: message.commandName, chainId: message.chainId, chainData: encData, iv: iv};
-        console.log("Sending message: ",msg);
-        webRTCConnection.send(msg);
-      });
+      var exitNode = JSON.parse(content),
+          con = webrtc.createConnection(exitNode.socket.address, exitNode.socket.port);
+      con.send({commandName: message.commandName, chainData: exitNode.message, chainId: exitNode.chainId, mode: "forward"});
+//      var iv = cu.generateNonce();
+//      cu.encryptAES("successfully responded to remote message with content"+JSON.stringify(content), node.key, iv).then(function(encData) {
+//        var msg = {commandName: message.commandName, chainId: message.chainId, chainData: encData, iv: iv};
+//        console.log("Sending message: ",msg);
+//        webRTCConnection.send(msg);
+//      });
     }
   };
 
