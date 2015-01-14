@@ -137,27 +137,54 @@ window.stillepost.onion = (function() {
     });
   },
 
-  createLayer = function(key, pubKey, data, socket) {
-    var parsedPubKey = pubKey;
-    if (typeof pubKey === "string")
-      parsedPubKey = JSON.parse(pubKey);
-    return cu.wrapAESKey(key, parsedPubKey).then(function(keyData) {
-      console.log("keyData: " + keyData);
-      var iv = cu.generateNonce(),
-        dataToEncrypt = null;
-      console.log("generated IV: ",iv);
-      if (socket) {
-        // create intermediate node layer
-        dataToEncrypt = JSON.stringify({nodeSocket: socket, data: data});
-      } else {
-        // create exit node layer
-        dataToEncrypt = JSON.stringify({data: data});
-      }
-      console.log("encrypting data: "+dataToEncrypt);
-      return cu.encryptAES(dataToEncrypt, key, iv).then(function(encData) {
-        return {keyData: keyData, chainData:encData, iv:iv};
-      });
-    });
+  createBuildMessage = function(keys, nodes, exitNodeData) {
+
+    var buildLayer = function(key, pubKey, dataToEncrypt) {
+        var parsedPubKey = pubKey;
+        if (typeof pubKey === "string")
+          parsedPubKey = JSON.parse(pubKey);
+        return cu.wrapAESKey(key, parsedPubKey).then(function(keyData) {
+          console.log("keyData: " + keyData);
+          var iv = cu.generateNonce();
+          console.log("encrypting data: "+dataToEncrypt);
+          return cu.encryptAES(dataToEncrypt, key, iv).then(function(encData) {
+            return {keyData: keyData, chainData:encData, iv:iv};
+          });
+        });
+    },
+
+    exitNodeLayer = function() {
+      return buildLayer(keys[0], nodes[0].key, JSON.stringify({data: exitNodeData}));
+    },
+
+    entryNodeLayer = function(data) {
+      var entryNodeData = {keyData: data.keyData, chainData: data.chainData, iv: data.iv};
+      return buildLayer(keys[chainSize-1], nodes[chainSize-1].key, JSON.stringify({nodeSocket: nodes[chainSize-2].socket, data: entryNodeData}));
+    },
+
+    intermediateNodeLayer = function(data) {
+      var intermediateData = {keyData: data.keyData, chainData: data.chainData, iv: data.iv};
+      return buildLayer(keys[data.nodeIndex], nodes[data.nodeIndex].key, JSON.stringify({nodeSocket: nodes[data.nodeIndex-1].socket, data: intermediateData}));
+    },
+
+    currentNodeIndex = 1,
+    returnPromise = Promise.resolve();
+
+    returnPromise = returnPromise.then(exitNodeLayer);
+
+    for (; currentNodeIndex < chainSize-1; currentNodeIndex++) {
+      returnPromise = returnPromise.then(
+        (function(currentNodeIndex) {
+          return function(data) {
+            data.nodeIndex = currentNodeIndex;
+            return intermediateNodeLayer(data);
+          }
+        })(currentNodeIndex)
+      );
+    }
+    returnPromise = returnPromise.then(entryNodeLayer);
+
+    return returnPromise;
   },
 
   //requests list of nodes, creates layered 'create' request and sends it to the first node in the chain.
@@ -183,38 +210,27 @@ window.stillepost.onion = (function() {
         // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
         _masterChainNonce = cu.generateNonce();
         var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce};
-        return createLayer(keys[0], nodes[0].key, dataExitNode).then(function(layerDataExit) {
-          // build second innermost layer - node2
-          // This is the encrypted Exit Node Data which is again encrypted
-          var intermediateData = {keyData: layerDataExit.keyData, chainData: layerDataExit.chainData, iv: layerDataExit.iv};
-          console.log("created exit node layer",intermediateData);
-          return createLayer(keys[1], nodes[1].key, intermediateData, nodes[0].socket).then(function(layerDataIntermediate) {
+        return createBuildMessage(keys, nodes, dataExitNode).then(function(data) {
+          chainIdMaster = createChainId();
+          _entryNodeSocket = nodes[chainSize-1].socket;
+          var command = {commandName: 'build', keyData: data.keyData, chainData: data.chainData, iv: data.iv,
+            chainId: chainIdMaster};
+          console.log("created command: ", command);
 
-            // build third layer - entry node
-            var entryNodeData = {keyData: layerDataIntermediate.keyData, chainData: layerDataIntermediate.chainData, iv: layerDataIntermediate.iv};
-            return createLayer(keys[2], nodes[2].key, entryNodeData, nodes[1].socket).then(function(layerDataEntry) {
-              chainIdMaster = createChainId();
-              _entryNodeSocket = nodes[2].socket;
-              var command = {commandName: 'build', keyData: layerDataEntry.keyData, chainData: layerDataEntry.chainData, iv: layerDataEntry.iv,
-                chainId: chainIdMaster};
-              console.log("created command: ", command);
-
-              var con = new webrtc.createConnection(nodes[2].socket.address, nodes[2].socket.port),
-                promise = new Promise(function(resolve,reject) {
-                  _masterChainCreated = resolve;
-                  _masterChainError = reject;
-                  setTimeout(30000,function() {
-                    if (!_isMasterChainCreated) {
-                      reject("Create chain Timeout");
-                    }
-                  });
-                });
-              con.send(command).catch(function(err) {
-                _masterChainError(err);
+          var con = new webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
+            promise = new Promise(function(resolve,reject) {
+              _masterChainCreated = resolve;
+              _masterChainError = reject;
+              setTimeout(30000,function() {
+                if (!_isMasterChainCreated) {
+                  reject("Create chain Timeout");
+                }
               });
-              return promise;
             });
+          con.send(command).catch(function(err) {
+            _masterChainError(err);
           });
+          return promise;
         }, function (err) {
           console.log("Error while building layers", err);
         });
@@ -540,12 +556,6 @@ window.stillepost.onion = (function() {
       var exitNode = JSON.parse(content),
           con = webrtc.createConnection(exitNode.socket.address, exitNode.socket.port);
       con.send({commandName: message.commandName, chainData: exitNode.message, chainId: exitNode.chainId, mode: "forward"});
-//      var iv = cu.generateNonce();
-//      cu.encryptAES("successfully responded to remote message with content"+JSON.stringify(content), node.key, iv).then(function(encData) {
-//        var msg = {commandName: message.commandName, chainId: message.chainId, chainData: encData, iv: iv};
-//        console.log("Sending message: ",msg);
-//        webRTCConnection.send(msg);
-//      });
     }
   };
 
