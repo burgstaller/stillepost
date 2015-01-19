@@ -31,6 +31,7 @@ nodes.addEntry = function (entry) {
     idRegistry[entry.id] = true;
 };
 
+//removes a node from all datastructures
 nodes.deleteEntry = function (socket) {
     delete idRegistry[nodes[getNodeKey(socket)].id];
     delete nodes[getNodeKey(socket)];
@@ -44,6 +45,7 @@ nodes.deleteEntry = function (socket) {
     return false;
 };
 
+//returns the list of all registered nodes
 server.get('/nodelist/:id', function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
@@ -55,6 +57,9 @@ server.get('/nodelist/:id', function (req, res, next) {
     res.send(200, createResponseObject("OK", nodesArray));
     next();
 });
+
+//each node has to send heardbeat to the directory server
+//otherwise it will be assumed, that the node went offline
 server.get('/heartbeat/:id', function (req, res, next) {
     var id = req.params.id;
     if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
