@@ -14,11 +14,32 @@ window.stillepost.cryptoUtils = (function() {
 	 * @returns Promise which evaluates to a 128 bit nonce of type Uint8Array(16)
 	 */
 	public.generateNonce = function() {
-		return crypto.getRandomValues(new Uint8Array(16));
+		return crypto.getRandomValues(new Uint32Array(4));
 	};
 
 	public.generateRandomInt32 = function() {
-		return crypto.getRandomValues(new Uint32Array(1))[0];
+		var num = crypto.getRandomValues(new Uint32Array(1))[0];
+		while (num == 0) {
+			num = crypto.getRandomValues(new Uint32Array(1))[0];
+		}
+		return num;
+	};
+
+	public.uInt32Concat = function(a, b)
+	{
+		if(!a)
+			return new Uint32Array(b);
+		if(!b)
+			return new Uint32Array(a);
+		var first = new Uint32Array(a),
+			second = new Uint32Array(b),
+			firstLength = first.length,
+			result = new Uint32Array(firstLength + second.length);
+
+		result.set(first);
+		result.set(second, firstLength);
+
+		return result;
 	};
 
 	/**
@@ -116,28 +137,25 @@ window.stillepost.cryptoUtils = (function() {
 		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privateRSAKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
 	};
 
-	/**
-	 * Converts ArrayBuffer object to string object
-	 * @param buf the ArrayBuffer object
-	 * @returns {string} the stringified ArrayBuffer object
-	 */
-	function ab2str(buf) {
-		return String.fromCharCode.apply(null, new Uint8Array(buf));
-	}
-
-	/**
-	 * Converts string object to ArrayBuffer object
-	 * @param str the string to be converted to type ArrayBuffer
-	 * @returns {ArrayBuffer} the ArrayBuffer object
-	 */
-	function str2ab(str) {
-		var buf = new ArrayBuffer(str.length); // 2 bytes for each char
-		var bufView = new Uint8Array(buf);
-		for (var i=0, strLen=str.length; i < strLen; i++) {
-			bufView[i] = str.charCodeAt(i);
+	public.hash = function(data) {
+		var input = data;
+		if (typeof data === "string") {
+			input = str2ab(data);
 		}
-		return buf;
-	}
+		return crypto.subtle.digest({name: 'SHA-256'}, input).then(function(digest) {
+			return ab2str(digest);
+		});
+	};
+
+	public.hashArrayObjects = function(array) {
+		if (array && array.constructor === Array) {
+			var promises = [];
+			for (var i = 0; i < array.length; i++) {
+				promises.push(public.hash(array[i]));
+			}
+			return Promise.all(promises);
+		}
+	};
 
 	// TODO: IMPORTANT - Remove following function - only used for test purposes
 	// used to simulate public keys retrieved from directory server
