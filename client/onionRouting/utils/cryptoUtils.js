@@ -49,12 +49,10 @@ window.stillepost.cryptoUtils = (function() {
 	 * @returns Promise which evaluates to the string representation of the exported publicKey
 	 */
 	public.getGeneratedPublicKey = function() {
-		// todo: do we need a random public exponent? ie.:
 		// rsaAlgorithm.publicExponent = <random pubExp>
 		return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
 				privateRSAKey = keyPair.privateKey;
 				return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
-					// todo: if we use random pubExp we need to return it and store it on the server ie:
 					// return {publicKey: JSON.stringify(exportKey), publicExponent:pubExp};
 					return JSON.stringify(exportKey);
 				});
