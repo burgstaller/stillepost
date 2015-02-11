@@ -206,6 +206,12 @@ window.stillepost.webrtc = (function() {
     }.bind(this));
   };
 
+  WebRTCConnection.prototype.close = function() {
+    if (this._dataChannel.readyState !== 'closed' && this.pc.signalingState !== 'closed') {
+      this.pc.close();
+    }
+  };
+
   function removeConnection(connectionId) {
     var tmp;
     for (var i = 0; i < connections.length; i++) {
