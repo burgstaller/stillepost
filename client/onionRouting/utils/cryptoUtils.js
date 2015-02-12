@@ -25,8 +25,10 @@ window.stillepost.cryptoUtils = (function() {
 		return num;
 	};
 
-	public.uInt32Concat = function(a, b)
+	public.uInt32Concat = function(first, second)
 	{
+    var a = (typeof first === 'number') ? new Uint32Array([first]) : first,
+      b = (typeof second === 'number') ? new Uint32Array([second]) : second;
 		if(!a)
 			return new Uint32Array(b);
 		if(!b)
