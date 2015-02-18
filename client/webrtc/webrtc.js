@@ -264,7 +264,7 @@ window.stillepost.webrtc = (function() {
     var conn = null;
     for (var i=0; i < connections.length; i++) {
       conn = connections[i];
-      conn.pc.close();
+      conn.close();
     }
     if (_beforeUnload)
       _beforeUnload();

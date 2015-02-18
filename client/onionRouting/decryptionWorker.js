@@ -1,14 +1,14 @@
 //params: data,key,iv
 self.onmessage = function(e) {
-
-    var alg = {name: "AES-GCM", iv: e.data.iv};
-    var buffer = str2ab(e.data.data);
-    crypto.subtle.decrypt(alg, e.data.key, buffer).then(function(decData) {
-        postMessage({success:true,data: ab2str(decData)});
-    }).catch(function(error){
-        postMessage({success:false,data:error.message});
-    });
-
+  var alg = {name: "AES-GCM", iv: e.data.iv};
+  var buffer = str2ab(e.data.data);
+  crypto.subtle.decrypt(alg, e.data.key, buffer).then(function(decData) {
+    postMessage({success:true,data: ab2str(decData)});
+    close();
+  }).catch(function(error){
+    postMessage({success:false,data:error.message});
+    close();
+  });
 };
 
 /**
