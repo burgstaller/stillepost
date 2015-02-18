@@ -84,6 +84,8 @@ window.stillepost.cryptoUtils = (function() {
 		});
 	}
 
+  public.generateAESKey = generateAESKey;
+
 	/**
 	 * Wraps an AES key with a RSA keyEncryptionKey.
 	 * @param key the key which is to be wrapped
@@ -136,6 +138,10 @@ window.stillepost.cryptoUtils = (function() {
 		var wrappedKeyAB = str2ab(wrappedKey);
 		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privateRSAKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
 	};
+
+  public.unwrapAESKeyWithRSAKey = function(wrappedKey, keyDecryptionKey) {
+    // todo: implement
+  };
 
 	public.hash = function(data) {
 		var input = data;
