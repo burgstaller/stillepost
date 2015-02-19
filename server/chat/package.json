@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "restify": "^2.8.5"
+    "restify": "^2.8.5",
+    "uuid": "^2.0.1"
   }
 }
