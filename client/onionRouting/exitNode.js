@@ -38,9 +38,11 @@ window.stillepost.onion.exitNode = (function() {
       // In order to acknowledge a successful chain build-up we return a build-command message, which contains the encrypted nonce signifying a successful build-up
       var iv = cu.generateNonce();
       return cu.encryptAES(JSON.stringify(content.data), unwrappedKey, iv, message.commandName).then(function (encData) {
-        var command = {commandName: 'build', chainId: digestArray[1], iv: iv, chainData: encData};
-        console.log("Exit node sending ack command: ", command);
-        return webRTCConnection.send(command);
+        return cu.hash(JSON.stringify({seqNum: 1, chainId: content.chainId, data: encData})).then(function(digest) {
+          var command = {commandName: 'build', chainId: digestArray[1], iv: iv, chainData: encData, checksum: digest};
+          console.log("Exit node sending ack command: ", command);
+          return webRTCConnection.send(command);
+        });
       });
     }).catch(function (err) {
       console.log("Error at exit node", err);
@@ -96,7 +98,7 @@ window.stillepost.onion.exitNode = (function() {
       console.log('Decrypted client message data: ', data);
       // check if this node is the exit node of both chains
       if (data.socket.address === onion.localSocket.address && data.socket.port === onion.localSocket.port) {
-        var pubEntry = exitNodeMap[data.message.connectionId];
+        var pubEntry = exitNodeMap[data.chainId];
         if (pubEntry) {
           console.log('clientMessage: Found exitNodeMap entry', pubEntry);
           public.forwardClientMessage(message, pubEntry, webRTCConnection);

@@ -291,9 +291,10 @@ window.stillepost.onion.onionRouting = (function() {
       return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
         return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv2}), masterChain[2], iv, commandName).then(function(encData) {
-          return cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumWrite++)).then(function(digest) {
+          return cu.hashArrayObjects([cu.uInt32Concat(chainIdMaster, masterSeqNumWrite),
+            JSON.stringify({seqNum: masterSeqNumWrite++, chainId: chainIdMaster, data: encData})]).then(function(digestArray) {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
-              msg = {commandName: commandName, chainData: encData, iv: iv, chainId: digest};
+              msg = {commandName: commandName, chainData: encData, iv: iv, chainId: digestArray[0], checksum: digestArray[1]};
             return con.send(msg).then(function() {
               console.log("Successfully sent message to entry node ",msg);
             });
@@ -411,9 +412,11 @@ window.stillepost.onion.onionRouting = (function() {
 
   function updateMasterHash(message, webRTCConnection) {
     return new Promise(function(resolve, reject) {
-      masterSeqNumRead += 1;
-      cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumRead)).then(function(digest) {
-        masterHash = digest;
+      cu.hashArrayObjects([JSON.stringify({seqNum: masterSeqNumRead, chainId: chainIdMaster, data: message.chainData}),
+        cu.uInt32Concat(chainIdMaster, ++masterSeqNumRead)]).then(function(digestArray) {
+        if (message.checksum !== digestArray[0])
+          reject('Invalid checksum');
+        masterHash = digestArray[1];
         resolve({message: message, webRTCConnection: webRTCConnection, master: true});
       }).catch(function(err) {
         reject(err);
@@ -423,16 +426,18 @@ window.stillepost.onion.onionRouting = (function() {
 
   function encWorkerListener(workerMessage, webRTCConnection, iv, node, message) {
     // Try to compute chainID-hash for next node
-    cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite++)).then(function(digest) {
+    cu.hashArrayObjects([cu.uInt32Concat(node.chainIdOut, node.seqNumWrite),
+      JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data})]).then(function(digestArray) {
       var con = null;
       if (workerMessage.data.success) {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
-        var command = {commandName: message.commandName, chainId: digest, iv: iv, chainData: workerMessage.data.data};
+        var command = {commandName: message.commandName, chainId: digestArray[0], iv: iv, chainData: workerMessage.data.data, checksum: digestArray[1]};
+        console.log('Sending command to next node',command);
         return con.send(command);
       } else {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
         //in encryption (or exit node) case send error to next node in chain
-        return con.send({commandName: "error", chainId: digest, errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
+        return con.send({commandName: "error", chainId: digestArray[0], errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
       }
     }).catch(function (error){
       //error callback for hash operation

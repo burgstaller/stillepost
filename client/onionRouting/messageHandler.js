@@ -9,8 +9,7 @@ window.stillepost.onion.messageHandler = (function() {
     cu = window.stillepost.cryptoUtils,
     webrtc = window.stillepost.webrtc,
     intermediateNode = window.stillepost.onion.intermediateNode,
-    exitNode = window.stillepost.onion.exitNode,
-    clientConnection = window.stillepost.onion.clientConnection;
+    exitNode = window.stillepost.onion.exitNode;
 
   public.build = function(message, remoteAddress, remotePort, webRTCConnection) {
     // if the message contains key data it is sent in the direction of chain master -> exit node
@@ -106,7 +105,6 @@ window.stillepost.onion.messageHandler = (function() {
     onion = window.stillepost.onion.onionRouting;
     cu = window.stillepost.cryptoUtils;
     webrtc = window.stillepost.webrtc;
-    clientConnection = window.stillepost.onion.clientConnection;
     intermediateNode = window.stillepost.onion.intermediateNode;
     exitNode = window.stillepost.onion.exitNode;
   };
@@ -144,12 +142,12 @@ window.stillepost.onion.messageHandler = (function() {
         this.entries.push(func);
       else {
         this.busy = true;
-        func().then(this.processMessage);
+        func().then(this.processMessage, queue.error);
       }
     },
     shift: function() {
       if (queue.entries.length > 0) {
-        (queue.entries.shift())().then(this.processMessage);
+        (queue.entries.shift())().then(this.processMessage, queue.error);
       } else {
         this.busy = false;
       }
@@ -157,6 +155,9 @@ window.stillepost.onion.messageHandler = (function() {
     processMessage: function(message) {
       messageCallback(message);
       queue.shift();
+    },
+    error: function(err) {
+      onion.sendError(err.errorMessage, null, err.webRTCConnection);
     }
   };
 
@@ -177,17 +178,18 @@ window.stillepost.onion.messageHandler = (function() {
     return new Promise(function(resolve, reject) {
       var node = onion.chainMap[message.chainId];
       if (node) {
-        node.seqNumRead += 1;
-        cu.hash(cu.uInt32Concat(node.chainIdIn, node.seqNumRead)).then(function (digest) {
-          onion.chainMap[digest] = node;
+        cu.hashArrayObjects([JSON.stringify({seqNum: node.seqNumRead, chainId: node.chainIdIn, data: message.chainData}),
+          cu.uInt32Concat(node.chainIdIn, ++node.seqNumRead)]).then(function (digestArray) {
+          if (digestArray[0] !== message.checksum)
+            reject({errorMessage: 'Invalid checksum', webRTCConnection: webRTCConnection});
+          onion.chainMap[digestArray[1]] = node;
           delete onion.chainMap[message.chainId];
           resolve({message: message, node: node, webRTCConnection: webRTCConnection});
         }).catch(function(err) {
-          reject(err);
+          reject({errorMessage: err, webRTCConnection: webRTCConnection});
         });
       } else {
-        reject("Received invalid chainId");
-        onion.sendError("Received invalid chainId", null, webRTCConnection);
+        reject({errorMessage: "Received invalid chainId", webRTCConnection: webRTCConnection});
       }
     });
   }

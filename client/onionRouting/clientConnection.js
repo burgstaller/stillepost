@@ -20,6 +20,8 @@ window.stillepost.onion.clientConnection = (function() {
   // interface function to create a connection to a remote client by connecting two chains
   // returns a connection object
   public.createClientConnection = function (address, port, chainId, pubKey) {
+    if (!(address && port && chainId && pubKey && onion.getPublicChainInformation().chainId))
+      return null;
     var connectionId = cu.generateRandomInt32(),
       aesKey = null,
       initPromise = cu.generateAESKey().then(function (key) {
@@ -44,9 +46,22 @@ window.stillepost.onion.clientConnection = (function() {
         });
       });
 
+    // Promise which resolves when a successful response is received from the remote client, otherwise the promise is rejected
+    var resolveProm,rejectProm,
+      answerPromise = initPromise.then(function() {
+        return new Promise(function(resolve, reject) {
+          resolveProm = resolve;
+          rejectProm = reject;
+        });
+      });
+    // Setting timeout for connection establishment
+    setTimeout(function() {
+      rejectProm("Connection could not be established: Timeout");
+    }, 7000);
+
     var clientConnection = {
       send: function (message) {
-        return initPromise.then(function () {
+        return answerPromise.then(function () {
           var iv = cu.generateNonce();
           return cu.encryptAES(JSON.stringify(message), aesKey, iv).then(function (encData) {
             var msg = {
@@ -58,6 +73,7 @@ window.stillepost.onion.clientConnection = (function() {
           });
         }).catch(function (err) {
           console.log('Error while sending message: ', err);
+          clientConnection.onerror(err);
         });
       },
       onerror: function (err) {
@@ -71,7 +87,12 @@ window.stillepost.onion.clientConnection = (function() {
       // by the caller of the createClientConnection function
       processMessage: function (messageObj) {
         cu.decryptAES(messageObj.data, aesKey, objToAb(messageObj.iv)).then(function (decData) {
-          clientConnection.onmessage(JSON.parse(decData));
+          var jsonData = JSON.parse(decData);
+          if (jsonData === connectionId)
+            resolveProm();
+          else
+            rejectProm("Received invalid initialization response from other client");
+          clientConnection.onmessage(jsonData);
         }).catch(function (err) {
           clientConnection.onerror(err);
         });
@@ -125,6 +146,7 @@ window.stillepost.onion.clientConnection = (function() {
           connection.aesKey = key;
           connection.publicKey = decMsgJson.publicKey;
           clientConnections[decMsgJson.connectionId] = connection;
+          connection.send(decMsgJson.connectionId);
           public.onClientConnection(connection);
         });
       }).catch(function(err) {
