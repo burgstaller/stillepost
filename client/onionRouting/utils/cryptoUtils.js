@@ -101,30 +101,36 @@ window.stillepost.cryptoUtils = (function() {
 		});
 	};
 
-	public.encryptWrappedAES = function(data, wrappedKey, iv) {
+	public.encryptWrappedAES = function(data, wrappedKey, iv, additionalData) {
 		return unwrapAESKey(wrappedKey).then(function(unwrappedKey) {
-			return public.encryptAES(data, unwrappedKey, iv);
+			return public.encryptAES(data, unwrappedKey, iv, additionalData);
 		});
 	};
 
-	public.encryptAES = function(data, key, iv) {
-		var alg = {name: "AES-GCM", iv: iv};
+	public.encryptAES = function(data, key, iv, additionalData) {
+    var alg = {name: "AES-GCM", iv: iv};
+    if (additionalData)
+      alg.additionalData = convertToAb(additionalData);
 		var buffer = str2ab(data);
 		return crypto.subtle.encrypt(alg, key, buffer).then(function(encData) {
 			return ab2str(encData);
 		});
 	};
 
-	public.decryptAES = function(encData, key, iv) {
-		var alg = {name: "AES-GCM", iv: iv};
+	public.decryptAES = function(encData, key, iv, additionalData) {
+    var alg = {name: "AES-GCM", iv: iv};
+    if (additionalData)
+      alg.additionalData = convertToAb(additionalData);
 		var buffer = str2ab(encData);
 		return crypto.subtle.decrypt(alg, key, buffer).then(function(decData) {
 			return ab2str(decData);
 		});
 	};
 
-	public.decryptWrappedAES = function(encData, key, iv) {
+	public.decryptWrappedAES = function(encData, key, iv, additionalData) {
 		var alg = {name: "AES-GCM", iv: iv};
+    if (additionalData)
+      alg.additionalData = convertToAb(additionalData);
 		var buffer = str2ab(encData);
 		return unwrapAESKey(key).then(function(unwrappedKey) {
 			return crypto.subtle.decrypt(alg, unwrappedKey, buffer).then(function(decData) {
@@ -133,15 +139,14 @@ window.stillepost.cryptoUtils = (function() {
 		});
 	};
 
-	public.unwrapAESKey = function(wrappedKey) {
+	public.unwrapAESKey = function(wrappedKey, keyDecryptionKey) {
+    var privKey = keyDecryptionKey;
+    if (!keyDecryptionKey)
+      privKey = privateRSAKey;
 		// Since wrapped key is string we first need to parse it to a ArrayBuffer object
 		var wrappedKeyAB = str2ab(wrappedKey);
-		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privateRSAKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
+		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
 	};
-
-  public.unwrapAESKeyWithRSAKey = function(wrappedKey, keyDecryptionKey) {
-    // todo: implement
-  };
 
 	public.hash = function(data) {
 		var input = data;
@@ -163,16 +168,25 @@ window.stillepost.cryptoUtils = (function() {
 		}
 	};
 
-	// TODO: IMPORTANT - Remove following function - only used for test purposes
-	// used to simulate public keys retrieved from directory server
-	public.getGeneratedRSAKeyPair = function() {
-		return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
-			return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
-				return {publicKey: JSON.stringify(exportKey), privateKey: keyPair.privateKey};
-			});
-		});
-	};
+  // Generate a RSA-2048 key pair
+  public.getGeneratedRSAKeyPair = function() {
+    return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
+      return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
+        return {publicKey: JSON.stringify(exportKey), privateKey: keyPair.privateKey};
+      });
+    });
+  };
 
+  function convertToAb(data) {
+    if (typeof data === 'string')
+      return new Uint8Array(str2ab(data));
+    else if (typeof data === 'object')
+      return new Uint8Array(str2ab(JSON.stringify(data)));
+    else
+      return data;
+  }
+
+	// TODO: IMPORTANT - Remove following function - only used for test purpose
 	// Decrypt with given private key - Since we fake being a node - we need to pass privkey
 	public.testDecryptAES = function(encData, key, iv, privKey) {
 		var alg = {name: "AES-GCM", iv: iv};

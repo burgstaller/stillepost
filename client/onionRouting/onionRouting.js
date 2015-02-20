@@ -1,8 +1,12 @@
 window.stillepost = window.stillepost || {};
-window.stillepost.onion = (function() {
+window.stillepost.onion = window.stillepost.onion || {};
+window.stillepost.onion.onionRouting = (function() {
   var public = {},
     cu = window.stillepost.cryptoUtils,
     webrtc = window.stillepost.webrtc,
+    intermediateNode = window.stillepost.onion.intermediateNode,
+    exitNode = window.stillepost.onion.exitNode,
+    clientConnection = window.stillepost.onion.clientConnection,
     chainSize = 3,
     directoryServerUrl = "http://127.0.0.1:42111",
     _masterChainCreated = null,
@@ -28,8 +32,6 @@ window.stillepost.onion = (function() {
   //  - chainId .. the chainId for the next node in the chain. On receiving the message, the next node needs this chainId in order to be able to get the chain information.
   chainMap = {},
 
-  clientConnections = {},
-
   // This nonce is contained in the build message in order to check successful chain build-up. The client sends this nonce to the exit node,
   // which then returns it to the client (both ways are of course encrypted in layers). The client then verifies the nonce in the received message with this nonce
   _masterChainNonce = null,
@@ -52,7 +54,8 @@ window.stillepost.onion = (function() {
       webrtc.connected.then(function(local)
       {
         var entry = {address: local.address, port: local.port};
-        _localSocket = entry;
+        _localSocket.address = entry.address;
+        _localSocket.port = entry.port;
         entry.key = pubKey;
         console.log("Registering at directory server as ",entry);
         var xhr = new XMLHttpRequest();
@@ -72,7 +75,7 @@ window.stillepost.onion = (function() {
         xhr.send(JSON.stringify(entry));
       });
 
-    }).catch(function(err) {Read
+    }).catch(function(err) {
       console.log("Error generating public RSA Key", err);
     });
   },
@@ -157,7 +160,7 @@ window.stillepost.onion = (function() {
           console.log("keyData: " + keyData);
           var iv = cu.generateNonce();
           console.log("encrypting data: "+dataToEncrypt);
-          return cu.encryptAES(dataToEncrypt, key, iv).then(function(encData) {
+          return cu.encryptAES(dataToEncrypt, key, iv, 'build').then(function(encData) {
             return {keyData: keyData, chainData:encData, iv:iv};
           });
         });
@@ -256,6 +259,8 @@ window.stillepost.onion = (function() {
       }, function(err) {
         console.log("Error while generating AES keys",err);
       });
+    }, function(err) {
+      console.log('Error building chain',err);
     });
   },
 
@@ -281,11 +286,11 @@ window.stillepost.onion = (function() {
    */
   sendChainMessage = function(commandName, message) {
     var iv = cu.generateNonce();
-    cu.encryptAES(JSON.stringify(message), masterChain[0], iv).then(function(encData) {
+    return cu.encryptAES(JSON.stringify(message), masterChain[0], iv, commandName).then(function(encData) {
       var iv2 = cu.generateNonce();
-      return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv}), masterChain[1], iv2).then(function(encData) {
+      return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
-        return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv2}), masterChain[2], iv).then(function(encData) {
+        return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv2}), masterChain[2], iv, commandName).then(function(encData) {
           return cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumWrite++)).then(function(digest) {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
               msg = {commandName: commandName, chainData: encData, iv: iv, chainId: digest};
@@ -295,18 +300,18 @@ window.stillepost.onion = (function() {
           });
         })
       });
-    }).catch(function(err) {
+    }, function(err) {
       console.log("Error sending message over the chain: ",err);
     });
   },
 
   unwrapMessage = function(message) {
     var data = null;
-    return cu.decryptAES(message.chainData, masterChain[2], objToAb(message.iv)).then(function (decDataNode1) {
+    return cu.decryptAES(message.chainData, masterChain[2], objToAb(message.iv), message.commandName).then(function (decDataNode1) {
       data = JSON.parse(decDataNode1);
-      return cu.decryptAES(data.chainData, masterChain[1], objToAb(data.iv)).then(function (decDataNode2) {
+      return cu.decryptAES(data.chainData, masterChain[1], objToAb(data.iv), message.commandName).then(function (decDataNode2) {
         data = JSON.parse(decDataNode2);
-        return cu.decryptAES(data.chainData, masterChain[0], objToAb(data.iv)).then(function (decDataExitNode) {
+        return cu.decryptAES(data.chainData, masterChain[0], objToAb(data.iv), message.commandName).then(function (decDataExitNode) {
           return decDataExitNode;
         });
       });
@@ -324,6 +329,7 @@ window.stillepost.onion = (function() {
         console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
         _pubChainId = data.pubChainId;
         _masterChainCreated();
+        _isMasterChainCreated = true;
       } else {
         _masterChainError("Received invalid nonce from exit node");
       }
@@ -354,30 +360,7 @@ window.stillepost.onion = (function() {
      */
     clientMessage: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        console.log("decrypted data: ", decData);
-        var jsonData = JSON.parse(decData);
-        var clientCon = clientConnections[jsonData.connectionId];
-        // received response from other client
-        if (clientCon) {
-          console.log('received response from client: ',jsonData.messageContent);
-          clientCon.onmessage(jsonData.messageContent);
-        }
-        // received initial message from other client
-        else {
-          console.log('received message from another client');
-
-          var connection = {
-            send: function(messageContent) {
-              var msg = {message: {messageContent:messageContent, connectionId: jsonData.connectionId}, chainId: jsonData.chainId, socket: jsonData.socket};
-              sendMessage('clientMessage', msg);
-            },
-            onmessage: function(message) {
-              console.log('onmessage: ',message);
-            }
-          };
-          clientConnections[jsonData.connectionId] = connection;
-          public.onClientConnection(connection);
-        }
+        clientConnection.processClientMessage(decData);
       }).catch(function(err) {
         console.log("error decrypting data",err);
       });
@@ -393,7 +376,7 @@ window.stillepost.onion = (function() {
       _createChainPromise.then(function () {
         console.log("created Chain");
         _isMasterChainCreated = true;
-        sendChainMessage(commandName, message);
+        return sendChainMessage(commandName, message);
       }).catch(function(err) {
         // todo: handle error
         console.log("error creating chain: ",err);
@@ -401,15 +384,14 @@ window.stillepost.onion = (function() {
       });
     } else {
       // send message over chain
-      sendChainMessage(commandName, message);
+      return sendChainMessage(commandName, message);
     }
   }
 
-  function sendError(errorMessage, errorObj, connection, chainId) {
-    console.log(errorMessage);
-    var node = chainMap[chainId];
-    if (node && node.socket.address) {
-      return cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
+  function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite) {
+    console.log(errorMessage, errorObj, connection, chainId);
+    if (chainId && seqNumWrite) {
+      return cu.hash(cu.uInt32Concat(chainId, seqNumWrite)).then(function(digest) {
         var errorMsg = {
           commandName: 'error',
           chainId: digest,
@@ -419,134 +401,13 @@ window.stillepost.onion = (function() {
           }
         };
         return connection.send(errorMsg);
+      }).catch(function() {
+        connection.close();
       });
     } else if (connection) {
       connection.close();
     }
   }
-
-  var messageHandler = {
-    build: function(message, remoteAddress, remotePort, webRTCConnection) {
-      // if the message contains key data it is sent in the direction of chain master -> exit node
-      if (message.keyData) {
-        cu.unwrapAESKey(message.keyData).then(function (unwrappedKey) {
-          return cu.decryptAES(message.chainData, unwrappedKey, objToAb(message.iv)).then(function (decData) {
-            var decryptedJson = JSON.parse(decData);
-            console.log("Decrypted data: ", decryptedJson);
-            if (decryptedJson.nodeSocket) {
-              // send to next socket
-              intermediateNode.build(message, decryptedJson, unwrappedKey, remoteAddress, remotePort, webRTCConnection);
-            } else {
-              // exit node logic - respond to build message
-              exitNode.build(message, decryptedJson, unwrappedKey, remoteAddress, remotePort, webRTCConnection);
-            }
-          });
-        }).catch(function (err) {
-          console.log("Error decrypting data ", err);
-          sendError("Error decrypting data on chain node " + _localSocket.address + ":" + _localSocket.port,
-            err, webRTCConnection);
-        });
-      }
-      else {
-        updateChainMap(message, webRTCConnection).then(function(result) {
-          if (!result.node) {
-            // we received ack message as master of the chain - validate content
-            handleBuildResponse(result.message);
-          } else {
-            // intermediate node logic: Encrypt and forward build message response.
-            intermediateNode.wrapMessage(result.message, result.node, result.webRTCConnection);
-          }
-        });
-      }
-    },
-
-    error: function(message, remoteAddress, remotePort, webRTCConnection) {
-      if (message.chainId && message.chainId == masterHash) {
-        console.log("Received error commandMessage - destroying chain ",message.errorMessage.error);
-        _masterChainError(message.errorMessage.message);
-        resetMasterChain();
-        webRTCConnection.close();
-      } else {
-        // we are not an endpoint node and need to forward the error message
-        var node = chainMap[message.chainId];
-        if (node && node.socket.address) {
-          cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
-            var con = webrtc.createConnection(node.socket.address, node.socket.port);
-            return con.send({commandName: "error", chainId: digest, errorMessage: message.errorMessage}).then(function() {
-              webRTCConnection.close();
-            });
-          });
-        } else {
-          console.log("Received error commandMessage from " + remoteAddress.address + ":" + remotePort.port,message.errorMessage.message);
-        }
-      }
-    },
-
-    message: function(message, remoteAddress, remotePort, webRTCConnection) {
-      queue.add(wrapFunction(updateChainMap, this, [message, webRTCConnection]));
-    },
-
-    messageCallback: function(message) {
-      if (message.node) {
-        if (message.node.type === "decrypt") {
-          intermediateNode[message.message.commandName](message.message, message.node, message.webRTCConnection);
-        } else if (message.node.type === "exit") {
-          exitNode[message.message.commandName](message.message, message.node, message.webRTCConnection);
-        } else {
-          intermediateNode.wrapMessage(message.message, message.node, message.webRTCConnection);
-        }
-      } else if(message.master) {
-        masterNodeMessageHandler[message.message.commandName](message.message);
-      } else {
-        sendError("Received invalid chainId", null, message.webRTCConnection);
-      }
-    },
-
-    clientMessage: function(message, remoteAddress, remotePort, webRTCConnection) {
-      var pubEntry = exitNode.exitNodeMap[message.chainId];
-      // If pubEntry exists this node is a exit node and received a clientMessage from another exitNode
-      if (pubEntry) {
-        console.log('clientMessage: Found exitNodeMap entry', pubEntry);
-        exitNode.forwardClientMessage(message, pubEntry, webRTCConnection);
-      } else {
-        messageHandler.message(message, remoteAddress, remotePort, webRTCConnection);
-      }
-    }
-  };
-
-  var queue = {
-    entries: [],
-    busy: false,
-    add: function(func) {
-      if (this.entries.length > 0 || this.busy)
-        this.entries.push(func);
-      else {
-        this.busy = true;
-        func().then(this.processMessage);
-      }
-    },
-    shift: function() {
-      if (queue.entries.length > 0) {
-        (queue.entries.shift())().then(this.processMessage);
-      } else {
-        this.busy = false;
-      }
-    },
-    processMessage: function(message) {
-      messageHandler.messageCallback(message);
-      queue.shift();
-    }
-  };
-
-  // Function wrapping code.
-  // fn - reference to function.
-  // context - what you want "this" to be.
-  // params - array of parameters to pass to function.
-  var wrapFunction = function(fn, context, params) {
-    return function() {
-      return fn.apply(context, params);
-    };
-  };
 
   function updateMasterHash(message, webRTCConnection) {
     return new Promise(function(resolve, reject) {
@@ -557,28 +418,6 @@ window.stillepost.onion = (function() {
       }).catch(function(err) {
         reject(err);
       });
-    });
-  }
-
-  function updateChainMap(message, webRTCConnection) {
-    if (message.chainId === masterHash) {
-      return updateMasterHash(message, webRTCConnection);
-    }
-    return new Promise(function(resolve, reject) {
-      var node = chainMap[message.chainId];
-      if (node) {
-        node.seqNumRead += 1;
-        cu.hash(cu.uInt32Concat(node.chainIdIn, node.seqNumRead)).then(function (digest) {
-          chainMap[digest] = node;
-          delete chainMap[message.chainId];
-          resolve({message: message, node: node, con: webRTCConnection});
-        }).catch(function(err) {
-          reject(err);
-        });
-      } else {
-        reject("Received invalid chainId");
-        sendError("Received invalid chainId", null, webRTCConnection);
-      }
     });
   }
 
@@ -602,295 +441,39 @@ window.stillepost.onion = (function() {
     });
   }
 
-  // object containing all intermediate node logic
-  var intermediateNode = {
-    build: function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
-      console.log("Sending build command to next node: ", content.nodeSocket);
-      content.chainIdIn = objToAb(content.chainIdIn);
-      content.chainIdOut = objToAb(content.chainIdOut);
-      cu.hashArrayObjects([cu.uInt32Concat(content.chainIdIn, 1), cu.uInt32Concat(content.chainIdOut, 1)]).then(function(digestArray) {
-        // add entries to chainMap - which maps a chainId to a specific chain
-        // entry for master -> exitNode direction
-        chainMap[digestArray[0]] = {socket: content.nodeSocket, key: unwrappedKey, chainIdIn: content.chainIdIn, seqNumRead: 1,
-          chainIdOut: content.chainIdOut, seqNumWrite: 1, type: "decrypt"};
-        // entry for exitNode -> master direction
-        chainMap[digestArray[1]] = {
-          socket: {address: remoteAddress, port: remotePort},
-          key: unwrappedKey,
-          chainIdIn: content.chainIdOut,
-          seqNumRead: 1,
-          chainIdOut: content.chainIdIn,
-          seqNumWrite: 1,
-          type: "encrypt"
-        };
-
-        var buildMessage = {
-          commandName: 'build',
-          iv: objToAb(content.data.iv),
-          keyData: content.data.keyData,
-          chainData: content.data.chainData
-        };
-        console.log("Command to send: ", buildMessage);
-        // Create webrtc connection with next node in the chain and send the data
-        var con = webrtc.createConnection(content.nodeSocket.address, content.nodeSocket.port);
-        con.send(buildMessage).catch(function (err) {
-          // if an error occurred while trying to send message to next node, we return an error message to the previous node
-          sendError("Error while sending build message to next node " +
-          content.nodeSocket.address + ":" + content.nodeSocket.port, err, webRTCConnection, content.chainIdIn);
-        });
-      });
-    },
-
-    /**
-     * Entry or intermediate node logic: Encrypt and forward message.
-     * This logic represents the back-traversal of the message response from exit node to chain master node
-     * Schematic representation of the message, which is generated.
-     * message = {chainData: E_aesNode(message.chainData, message.iv), iv: <newly generated nonce>]
-     * @param message ... the message JSON object received via webRTC
-     * @param webRTCConnection
-     * @param node
-     */
-    wrapMessage: function(message, node, webRTCConnection) {
-      var iv = cu.generateNonce(),
-        dataToEncrypt = {chainData: message.chainData, iv: message.iv};
-      console.log("Encrypting and forwarding data to next node: ",node);
-      console.log(dataToEncrypt);
-
-      var encWorker = new Worker('onionRouting/encryptionWorker.js');
-      encWorker.postMessage({iv:iv, key:node.key, data:JSON.stringify(dataToEncrypt)});
-
-      encWorker.onmessage = function(workerMessage){
-        encWorkerListener(workerMessage, webRTCConnection, iv, node, message);
-      };
-    },
-
-    message: function(message, node, webRTCConnection) {
-      var iv = objToAb(message.iv),
-
-        decWorker = new Worker('onionRouting/decryptionWorker.js');
-      decWorker.postMessage({iv:iv, key:node.key, data:message.chainData});
-
-      decWorker.onmessage = function(workerMessage){
-        // Try to compute Hash for next node
-        cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite++)).then(function(digest) {
-          if (workerMessage.data.success) {
-            workerMessage.data.data = JSON.parse(workerMessage.data.data);
-
-            var con = webrtc.createConnection(node.socket.address, node.socket.port),
-              command = {
-                commandName: message.commandName,
-                chainId: digest,
-                iv: workerMessage.data.data.iv,
-                chainData: workerMessage.data.data.chainData
-              };
-            return con.send(command);
-          } else {
-            //in decryption case send error to previous node in chain
-            return webRTCConnection.send({commandName: "error", chainId: digest, errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
-          }
-        }).catch(function (error){
-          //error callback for hash operation
-          console.log('error in decWorkerListener: ', error);
-          webRTCConnection.close();
-        });
-      };
-    },
-
-    clientMessage: function(message, decData, node) {
-      intermediateNode.message(message, decData, node);
-    }
-  };
-
-  // object containing all exit node logic
-  var exitNode = {
-    // map of h(chainId || seqNum) -> pubChainId
-    exitNodeMap: {},
-    build: function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
-      console.log("Received build message as exit node ", content);
-      content.chainId = objToAb(content.chainId);
-      cu.hashArrayObjects([cu.uInt32Concat(content.chainId, 1), cu.uInt32Concat(content.chainId, 1)]).then(function(digestArray) {
-
-        var mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
-          seqNumRead: 1, seqNumWrite: 2, type: "exit"};
-
-        // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
-        chainMap[digestArray[0]] = mapEntry;
-
-        var pubChainId = cu.generateRandomInt32();
-        while (exitNode.exitNodeMap[pubChainId]) {
-          pubChainId = cu.generateRandomInt32();
-        }
-        exitNode.exitNodeMap[pubChainId] = mapEntry;
-        content.data.pubChainId = pubChainId;
-
-        // In order to acknowledge a successful chain build-up we return a build-command message, which contains the encrypted nonce signifying a successful build-up
-        var iv = cu.generateNonce();
-        return cu.encryptAES(JSON.stringify(content.data), unwrappedKey, iv).then(function (encData) {
-          var command = {commandName: 'build', chainId: digestArray[1], iv: iv, chainData: encData};
-          console.log("Exit node sending ack command: ", command);
-          return webRTCConnection.send(command);
-        });
-      }).catch(function (err) {
-        console.log("Error at exit node", err);
-        sendError("Error handling data on exit node " + _localSocket.address + ":" + _localSocket.port,
-          err, webRTCConnection, content.chainId);
-      });
-
-    },
-
-    message: function(message, node, webRTCConnection) {
-      this.processMessage(message, node, webRTCConnection, function(data) {
-        var encryptionIV = cu.generateNonce(),
-          encWorker = new Worker('onionRouting/encryptionWorker.js');
-        console.log("Received message through chain ", data);
-
-        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify(data)});
-        encWorker.onmessage = function(workerMessage) {
-          encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-        };
-      });
-    },
-
-    processMessage: function(message, node, webRTCConnection, successCallback) {
-      var iv = objToAb(message.iv),
-        decWorker = new Worker('onionRouting/decryptionWorker.js');
-
-      decWorker.postMessage({iv:iv, key:node.key, data:message.chainData});
-
-      decWorker.onmessage = function(workerMessage){
-        if (workerMessage.data.success) {
-          // handle the received message as exit node
-          if (successCallback)
-            successCallback(JSON.parse(workerMessage.data.data));
-        }else{
-          // Send error to next node
-          cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite++)).then(function(digest) {
-            //in decryption case send error to previous node in chain
-            return webRTCConnection.send({commandName: "error", chainId: digest, errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
-          }).catch(function (error){
-            //error callback for hash operation
-            console.log('Error while calculating chainID-hash as exitNode: ', error);
-            webRTCConnection.close();
-          });
-        }
-      };
-    },
-
-    forwardClientMessage: function(message, node, webRTCConnection) {
-      var encryptionIV = cu.generateNonce(),
-        encWorker = new Worker('onionRouting/encryptionWorker.js');
-      console.log("Forwarding client message through chain ", node, message.chainData);
-
-      encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify(message.chainData)});
-      encWorker.onmessage = function(workerMessage) {
-        encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-      };
-    },
-
-    clientMessage: function(message, node, webRTCConnection) {
-      this.processMessage(message, node, webRTCConnection, function (data) {
-        console.log('Decrypted client message data: ', data);
-        // check if this node is the exit node of both chains
-        if (data.socket.address === _localSocket.address && data.socket.port === _localSocket.port) {
-          var pubEntry = exitNode.exitNodeMap[data.message.connectionId];
-          if (pubEntry) {
-            console.log('clientMessage: Found exitNodeMap entry', pubEntry);
-            exitNode.forwardClientMessage(message, pubEntry, webRTCConnection);
-          }
-        } else {
-          var con = webrtc.createConnection(data.socket.address, data.socket.port);
-          con.send({commandName: message.commandName, chainData: data.message, chainId: data.chainId});
-        }
-      });
-    }
-  };
-
-  public.exitMap = exitNode.exitNodeMap;
-
-  /**
-   * Interface function called by WebRTC to handle an incoming onion request.
-   * A message type is identified by the "commandName" attribute.
-   * A onion chain message corresponds to a JSON object, which contains at least following attributes:
-   *  - commandName
-   *  - chainId
-   *  - chainData
-   * Following commandNames are supported:
-   *  - build ... command used for chain build-up
-   *  - ajaxRequest ... command used to send an ajax-Request via the chain
-   *  - connect ... command used to connect to a specific node via the chain (The exitNode of the chain initiates a webRTC connection to the specified node)
-   *  - error ... command used to handle errors
-   * @param message the message that was send via webrtc
-   * @param remoteAddress Address of the remote peer who send the message
-   * @param remotePort Port of the remote peer who send the message
-   * @param webRTCConnection the WebRTC connection object to the origin of the message
-   */
-  public.handleMessage = function(message, remoteAddress, remotePort, webRTCConnection) {
-    console.log("Handle message: ",message);
-    var fn = messageHandler[message.commandName];
-    if (typeof fn === 'function') {
-      fn(message, remoteAddress, remotePort, webRTCConnection);
-    } else {
-      // handle invalid message commandName
-      console.log("Error: Invalid message commandName");
-      sendError("Invalid commandName", null, webRTCConnection);
-    }
-  };
-
   function resetMasterChain() {
     _createChainPromise = null;
     _isMasterChainCreated = false;
     chainIdMaster = null;
+    masterHash = null;
+    masterSeqNumRead = 1;
+    masterSeqNumWrite = 1;
+    _exitNodeSocket = null;
+    _pubChainId = null;
+    _masterChainNonce = null;
   }
 
-  public.onClientConnection = function(connection) {
-    console.log('onclientMessage called with connection: ', connection);
-    connection.onmessage = function(message) {
-      console.log('overwritten onmessage: ',message);
-      connection.send('echoing message: ' + message);
-    }
-  };
-
-  // todo: REMOVE THIS - only dummy pubKey for testing
-  cu.getGeneratedPublicKey().then(function(pubKey) {
-    public.pubKey = pubKey;
-  });
-
-  // interface function to create a connection to a remote client by connecting two chains
-  // returns a connection object
-  public.createClientConnection = function(address, port, chainId, pubKey) {
-    var connectionId = cu.generateRandomInt32(),
-      initPromise = cu.generateAESKey().then(function(key) {
-        return cu.wrapAESKey(key, JSON.parse(pubKey)).then(function(wrappedKey) {
-          var initMessage = {message: {keyData: wrappedKey, connectionId: connectionId, chainId: _pubChainId, socket: _exitNodeSocket}, chainId: chainId, socket: {address: address, port: port}};
-          sendMessage("clientMessage", initMessage);
-        });
-      });
-
-    var clientConnection = {
-      send: function(message) {
-        var msg = {message: {messageContent: message, connectionId: connectionId}, chainId: chainId, socket: {address: address, port: port}};
-        return initPromise.then(function() {
-          sendMessage("clientMessage", msg);
-        });
-      },
-      // event callback, which is called upon receiving the answer from the other client. It is expected that this callback is overwritten
-      // by the caller of the createClientConnection function
-      onmessage: function(message) {
-        console.log('onmessage: ', message);
-      }
-    };
-    clientConnections[connectionId] = clientConnection;
-    return clientConnection;
-  };
-
-  //interface function to generically send a new message over the master chain
-  public.sendMessage = function(message) {
-    sendMessage("message",message);
+  public.createChain = function() {
+    if (!_createChainPromise)
+      _createChainPromise = createChain();
+    return _createChainPromise;
   };
 
   public.getPublicChainInformation = function() {
     return {socket: _exitNodeSocket, chainId: _pubChainId};
   };
+
+  public.init = function() {
+    cu = window.stillepost.cryptoUtils;
+    webrtc = window.stillepost.webrtc;
+    exitNode = window.stillepost.onion.exitNode;
+    intermediateNode = window.stillepost.onion.intermediateNode;
+    clientConnection = window.stillepost.onion.clientConnection;
+  };
+
+  public.chainMap = chainMap;
+
+  public.encWorkerListener = encWorkerListener;
 
   public.peerDisconnected = function(remoteAddress, remotePort) {
     console.log("peer disconnected");
@@ -903,12 +486,14 @@ window.stillepost.onion = (function() {
       if (chainMap.hasOwnProperty(key) && chainMap[key].socket.address === remoteAddress &&
           chainMap[key].socket.port === remotePort) {
         for (var innerKey in chainMap) {
-          if (chainMap.hasOwnProperty(innerKey) && chainMap[innerKey].chainId == key) {
+          if (chainMap.hasOwnProperty(innerKey) && chainMap[innerKey].chainIdIn == chainMap[key].chainIdOut) {
             var mapEntry = chainMap[innerKey],
               con = webrtc.createConnection(mapEntry.socket.address, mapEntry.socket.port);
             console.log("Propagating peer disconnected error message to next node ",mapEntry);
-              sendError("Connection closed", null, con, key).then(function() {
+              sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite).then(function() {
                 con.close();
+              }).catch(function(err) {
+                console.log('Could not propagate error message',err);
               });
             delete chainMap[innerKey];
           }
@@ -917,6 +502,22 @@ window.stillepost.onion = (function() {
       }
     }
   };
+
+  public.sendError = sendError;
+
+  public.localSocket = _localSocket;
+
+  public.masterNodeMessageHandler = masterNodeMessageHandler;
+
+  public.updateMasterHash = updateMasterHash;
+
+  public.getMasterHash = function() {return masterHash;};
+
+  public.resetMasterChain = resetMasterChain;
+
+  public.chainError = function (err) {_masterChainError(err);};
+
+  public.handleBuildResponse = handleBuildResponse;
 
   public.cleanUp = function() {
     resetMasterChain();
@@ -945,6 +546,11 @@ window.stillepost.onion = (function() {
     public.cleanUp();
     if (_beforeUnload)
       _beforeUnload();
+  };
+
+  //interface function to generically send a new message over the master chain
+  public.sendMessage = function(messageType, message) {
+    return sendMessage(messageType, message);
   };
 
   initOnionSetup();

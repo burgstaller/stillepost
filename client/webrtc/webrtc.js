@@ -125,7 +125,7 @@ window.stillepost.webrtc = (function() {
       channel.onerror = function (error) {
         console.log("Data channel error ", error);
         this._connectionError("WebRTC DataChannel error");
-        window.stillepost.onion.peerDisconnected(this._remotePeer, this._remotePort);
+        window.stillepost.onion.onionRouting.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
       }.bind(this);
 
@@ -133,14 +133,14 @@ window.stillepost.webrtc = (function() {
         if (event.data) {
           var data = JSON.parse(event.data);
           console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
-          window.stillepost.onion.handleMessage(data, this._remotePeer, this._remotePort, this);
+          window.stillepost.onion.messageHandler.handleMessage(data, this._remotePeer, this._remotePort, this);
         }
       }.bind(this);
 
       channel.onclose = function() {
         console.log("data channel close");
         this._connectionError("WebRTC DataChannel was closed");
-        window.stillepost.onion.peerDisconnected(this._remotePeer, this._remotePort);
+        window.stillepost.onion.onionRouting.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
       }.bind(this);
     };

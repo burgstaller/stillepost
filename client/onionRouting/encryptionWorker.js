@@ -2,6 +2,8 @@
 self.onmessage = function(e) {
   console.log('Enc worker begins to work...');
   var alg = {name: "AES-GCM", iv: e.data.iv};
+  if (e.data.additionalData)
+    alg.additionalData = convertToAb(e.data.additionalData);
   var buffer = str2ab(e.data.data);
   crypto.subtle.encrypt(alg, e.data.key, buffer).then(function(encData) {
     postMessage({success:true,data:ab2str(encData)});
@@ -36,4 +38,13 @@ function str2ab(str) {
     bufView[i] = str.charCodeAt(i);
   }
   return buf;
+}
+
+function convertToAb(data) {
+  if (typeof data === 'string')
+    return new Uint8Array(str2ab(data));
+  else if (typeof data === 'object')
+    return new Uint8Array(str2ab(JSON.stringify(data)));
+  else
+    return data;
 }
