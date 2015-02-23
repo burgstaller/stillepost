@@ -60,6 +60,7 @@ window.stillepost.onion.clientConnection = (function() {
     }, 7000);
 
     var clientConnection = {
+      initialized: false,
       send: function (message) {
         return answerPromise.then(function () {
           var iv = cu.generateNonce();
@@ -88,11 +89,16 @@ window.stillepost.onion.clientConnection = (function() {
       processMessage: function (messageObj) {
         cu.decryptAES(messageObj.data, aesKey, objToAb(messageObj.iv)).then(function (decData) {
           var jsonData = JSON.parse(decData);
-          if (jsonData === connectionId)
+          if (clientConnection.initialized) {
+            clientConnection.onmessage(jsonData);
+          }
+          else if (jsonData.chainConnectionId === connectionId) {
+            clientConnection.initialized = true;
             resolveProm();
+          }
           else
             rejectProm("Received invalid initialization response from other client");
-          clientConnection.onmessage(jsonData);
+
         }).catch(function (err) {
           clientConnection.onerror(err);
         });
@@ -146,7 +152,7 @@ window.stillepost.onion.clientConnection = (function() {
           connection.aesKey = key;
           connection.publicKey = decMsgJson.publicKey;
           clientConnections[decMsgJson.connectionId] = connection;
-          connection.send(decMsgJson.connectionId);
+          connection.send({chainConnectionId: decMsgJson.connectionId});
           window.stillepost.onion.interfaces.onClientConnection(connection);
         });
       }).catch(function(err) {
