@@ -147,7 +147,7 @@ window.stillepost.onion.clientConnection = (function() {
           connection.publicKey = decMsgJson.publicKey;
           clientConnections[decMsgJson.connectionId] = connection;
           connection.send(decMsgJson.connectionId);
-          public.onClientConnection(connection);
+          window.stillepost.onion.interfaces.onClientConnection(connection);
         });
       }).catch(function(err) {
         console.log('Received client connection with invalid key',err);
@@ -167,13 +167,6 @@ window.stillepost.onion.clientConnection = (function() {
     _clientConPrivateKey = keyPair.privateKey;
     _clientConPublicKey = keyPair.publicKey;
   };
-
-  // todo: REMOVE THIS - only dummy RSA key pair for testing
-  cu.getGeneratedRSAKeyPair().then(function(keyPair) {
-    public.pubKey = keyPair.publicKey;
-    _clientConPublicKey = keyPair.publicKey;
-    _clientConPrivateKey = keyPair.privateKey;
-  });
 
   return public;
 })();

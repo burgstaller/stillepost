@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Anonymous Chat</title>
+    <script type="text/javascript" src="chat/jquery-2.1.3.min.js"></script>
+
+    <script type="text/javascript" src="onionRouting/utils/utils.js"></script>
+    <script type="text/javascript" src="webrtc/adapter.js"></script>
+    <script type="text/javascript" src="webrtc/SignalingChannel.js"></script>
+    <script type="text/javascript" src="webrtc/webrtc.js"></script>
+    <script type="text/javascript" src="onionRouting/utils/cryptoUtils.js"></script>
+    <script type="text/javascript" src="onionRouting/exitNode.js"></script>
+    <script type="text/javascript" src="onionRouting/intermediateNode.js"></script>
+    <script type="text/javascript" src="onionRouting/clientConnection.js"></script>
+    <script type="text/javascript" src="onionRouting/messageHandler.js"></script>
+    <script type="text/javascript" src="onionRouting/onionRouting.js"></script>
+    <script type="text/javascript" src="onionRouting/decryptionWorker.js"></script>
+    <script type="text/javascript" src="onionRouting/encryptionWorker.js"></script>
+    <script type="text/javascript" src="onionRouting/interfaces.js"></script>
+
+    <script type="text/javascript" src="chat/chat.js"></script>
+    <script type="text/javascript" src="chat/chatUI.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="chat/chat.css">
+</head>
+<body>
+<input type="text" id="username" value="test" />
+<button id="loginButton" onclick="window.stillepost.chatUI.login()">login</button>
+
+<section></section>
+<aside>
+    <ul id="chatMembers"></ul>
+</aside>
+
+</body>
+</html>

@@ -1,105 +1,139 @@
 
 window.stillepost = window.stillepost || {};
 window.stillepost.chat = (function() {
-    var public = {},
-        chatServerUrl = "http://127.0.0.1:42112",
-        cu = window.stillepost.cryptoUtils,
-        sessionKey = "",
-        pubKeyHash = "";
 
-    function login(username, pubKey, chainId, socket, successCallback){
+    var _sessionKey = null,
+        _privateKey = null,
+        _publicKey = null,
+        _publicKeyHash = null,
+        _chainId = null,
+        _socket = null,
+        _username = null,
+        _chatServerUrl = null,
+        _users = null,
+        _connections = {},
+        oi = null,
+        cu = null;
+
+    function login(successCallback){
         var xhr = new XMLHttpRequest();
         xhr.onload = function () {
-            var response = JSON.parse(this.responseText);
+            console.log("chat: login SUCCESS");
 
-            console.log("LOGIN SUCCESS; response: ");
-            console.log(response);
-            sessionKey = response.data.sessionKey;
-            console.log("sessionKey: "+sessionKey);
-            cu.hash(pubKey).then(function(data){
-                pubKeyHash = data;
-                console.log("pubkeyhash: "+pubKeyHash);
+            var response = JSON.parse(this.responseText);
+            _sessionKey = response.data.sessionKey;
+            cu.hash(_publicKey).then(function(data){
+                _publicKeyHash = data;
                 if(typeof(successCallback) !== "undefined")
-                    successCallback(response, sessionKey, pubKeyHash);
+                    successCallback(response);
             });
-
         };
         xhr.onerror = function(e) {
-            console.log("Error occured at login: ");
+            console.log("chat: login FAILURE:");
             console.log(e.target);
         };
-        xhr.open("post", chatServerUrl + "/user", true);
-        xhr.send(JSON.stringify({"key":pubKey,"username":username,"chainid":chainId,"socket":socket}));
+        xhr.open("post", _chatServerUrl + "/user", true);
+        xhr.send(JSON.stringify({"key":_publicKey,"username":_username,"chainid":_chainId,"socket":_socket}));
     }
 
-    function getUserList(pubKeyHash, sessionKey, successCallback){
+    function getUserList(successCallback){
         var xhr = new XMLHttpRequest();
         xhr.onload = function () {
             var response = JSON.parse(this.responseText);
-
-            console.log("getUserList SUCCESS; response: ");
-            console.log(response);
-            if(typeof(successCallback) !== "undefined")
-                successCallback(response, response.data);
-        };
-        xhr.onerror = function(e) {
-            console.log("Error occured at getUserList: ");
-            console.log(e.target);
-        };
-        xhr.open("get", chatServerUrl + "/user?sessionKey="+encodeURIComponent(sessionKey)+"&keyHash="+encodeURIComponent(pubKeyHash), true);
-        xhr.send();
-    }
-
-    function logout(pubKeyHash, sessionKey, successCallback){
-        var xhr = new XMLHttpRequest();
-        xhr.onload = function () {
-            var response = JSON.parse(this.responseText);
-
-            console.log("LOGOUT SUCCESS; response: ");
-            console.log(response);
+            console.log("chat: getUserList SUCCESS");
             if(typeof(successCallback) !== "undefined")
                 successCallback(response);
         };
         xhr.onerror = function(e) {
-            console.log("Error occured at logout: ");
+            console.log("chat: getUserList FAILURE:");
             console.log(e.target);
         };
-        xhr.open("delete", chatServerUrl + "/user/"+encodeURIComponent(pubKeyHash)+"?sessionKey="+encodeURIComponent(sessionKey), true);
+        xhr.open("get", _chatServerUrl + "/user?sessionKey="+encodeURIComponent(_sessionKey)+"&keyHash="+encodeURIComponent(_publicKeyHash), true);
         xhr.send();
     }
 
-    public.test = function(){
-        cu.getGeneratedPublicKey().then(function(pubKey) {
-            console.log("Generated pubKey: "+pubKey);
-            var username = "test";
-            var chainid = 4;
-            var socket = "horse";
+    return {
+        /*
+            params
+            - username: optional
+            - privateKey: required
+            - publicKey: required
+            - chatServerUrl: optional#
 
-            // test login
-            login(username, pubKey, chainid, socket, function(response, sessionkey, pubKeyHash){
-                console.log("login fin");
+            returns chatObject in successCallback: the object with which the ui interacts
+         */
+        init: function(params, successCallback){
+            // read params
+            if(typeof(params) !== "object"){
+                console.log("chat: INIT FAILURE - no params");
+                return
+            }
+            _username = typeof(params.username) !== "string" ? "test" : params.username;
+            if(typeof(params.privateKey) === "undefined" || typeof(params.publicKey) ==="undefined"){
+                console.log("chat: INIT FAILURE - no keys");
+            } else {
+                _privateKey = params.privateKey;
+                _publicKey = params.publicKey;
+            }
+            _chatServerUrl = typeof(params.chatServerUrl) !== "string" ? "http://127.0.0.1:42112" : params.chatServerUrl;
 
-                // test getUserList
-                setTimeout(function(){getUserList(pubKeyHash, sessionKey, function(response, users){
-                    console.log("getuserlist fin");
-                    console.log(response);
-                    console.log(users);
-                });}, 1000);
+            // set vars
+            cu = window.stillepost.cryptoUtils;
+            oi = window.stillepost.onion.interfaces;
+            _chainId = oi.getPublicChainInformation().chainId;
+            _socket = oi.getPublicChainInformation().socket;
 
-                /*
-                // test logout
-                setTimeout(function(){logout(pubKeyHash, sessionKey, function(response){
-                   console.log("logout fin");
-                });}, 2000);
-                */
+            // init commands
+            oi.setupClientConnections(_privateKey, _publicKey);
 
+            var chatObject = null;
+            login(function(response){
+                chatObject = {
+                    // methods
+                    updateUserList: function () {
+                        getUserList(function(response){
+                            _users = response.data;
+                            chatObject.onUserListUpdate(_users);
+                        });
+                    },
+                    sendMessage: function(user, message){
+                        if(typeof(_connections[user.hash]) === "undefined"){
+                            _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key);
+                            _connections[user.hash].onmessage = function(msg){chatObject.onReceiveMessage(msg, user);};
+                        }
+                        _connections[user.hash].send(message);
+                    },
+
+                    // events
+                    onUserListUpdate: function(users){},
+                    onReceiveMessage: function(msg, user){},
+
+                    // kinda private event TODO refactor
+                    onClientConnected: function(connection){
+                        cu.hash(connection.publicKey).then(function(publicKeyHash){
+                            if(typeof(_users[publicKeyHash]) === "undefined"){
+                                getUserList(function(response){
+                                    _users = response.data;
+                                    chatObject.onUserListUpdate(_users);
+                                    if(typeof(_users[publicKeyHash]) === "undefined"){
+                                        console.log("chat: onClientConnected FAILURE no such user registered");
+                                        return;
+                                    }
+                                    _connections[publicKeyHash] = connection;
+                                    _connections[publicKeyHash].onmessage = function(msg){chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
+                                });
+                            } else {
+                                // TODO: is this really correct? (probably not)
+                                _connections[publicKeyHash] = connection;
+                                _connections[publicKeyHash].onmessage = function(msg){chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
+                            }
+                        });
+                    }
+                };
+                oi.onClientConnection = chatObject.onClientConnected;
+                if(typeof(successCallback) === "function")
+                    successCallback(chatObject);
             });
-
-
-        }).catch(function(err) {
-            console.log("Error generating public RSA Key", err);
-        });
+        }
     };
-
-    return public;
 })();

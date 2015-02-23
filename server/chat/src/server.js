@@ -35,6 +35,7 @@ var chatClients = function(){
         list[hash].chainid = chainid;
         list[hash].key = key;
         list[hash].sessionKey = sessionKey;
+        list[hash].hash = hash;
 
         return "OK";
     };
