@@ -148,6 +148,31 @@ window.stillepost.cryptoUtils = (function() {
 		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
 	};
 
+  public.encryptRSA = function(data, key) {
+    var keyData = (typeof key === 'string') ? JSON.parse(key) : key,
+      buffer = (typeof data === 'string') ? str2ab(data) : data;
+    return importRSAKey(keyData,['encrypt']).then(function(importedKey) {
+      return crypto.subtle.encrypt(rsaAlgorithm, importedKey, buffer).then(function (encData) {
+        return ab2str(encData);
+      });
+    });
+  };
+
+  public.decryptRSA = function(data, key) {
+    var keyData = (typeof key === 'string') ? JSON.parse(key) : key,
+      buffer = str2ab(data);
+    return crypto.subtle.decrypt(rsaAlgorithm, keyData, buffer).then(function (decData) {
+      return ab2str(decData);
+    });
+  };
+
+  function importRSAKey(key, keyUsages) {
+    var keyData = (typeof key === 'string') ? JSON.parse(key) : key;
+    return crypto.subtle.importKey(keyFormat, keyData, rsaAlgorithm, false, keyUsages).then(function(importedKey) {
+      return importedKey;
+    });
+  }
+
 	public.hash = function(data) {
 		var input = data;
 		if (typeof data === "string") {
@@ -170,7 +195,7 @@ window.stillepost.cryptoUtils = (function() {
 
   // Generate a RSA-2048 key pair
   public.getGeneratedRSAKeyPair = function() {
-    return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey"]).then(function (keyPair) {
+    return crypto.subtle.generateKey(rsaAlgorithm, true, ["wrapKey", "unwrapKey", 'encrypt', 'decrypt']).then(function (keyPair) {
       return crypto.subtle.exportKey(keyFormat, keyPair.publicKey).then(function(exportKey) {
         return {publicKey: JSON.stringify(exportKey), privateKey: keyPair.privateKey};
       });
