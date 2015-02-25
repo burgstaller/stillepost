@@ -17,15 +17,33 @@ window.stillepost.onion.clientConnection = (function() {
     cu = window.stillepost.cryptoUtils;
   };
 
+  var connectionState = {
+    ready: 'ready',
+    init: 'init',
+    closed: 'closed'
+  };
+
   // interface function to create a connection to a remote client by connecting two chains
   // returns a connection object
   public.createClientConnection = function (address, port, chainId, pubKey) {
     if (!(address && port && chainId && pubKey && onion.getPublicChainInformation().chainId))
       throw 'Invalid parameters in createClientConnection';
     var connectionId = cu.generateNonce(),
-      aesKey = null,
+      clientConnection = {
+        connectionState: connectionState.init,
+        seqNum: 1,
+        publicKey: pubKey,
+        connectionId: connectionId,
+        socket: {address: address, port: port},
+        chainId: chainId,
+        aesKey: null,
+        onerror: function (err) { console.log('Error in client connection', err); },
+        onmessage: function (message) { console.log('onmessage: ', message); },
+        close: function() { closeConnection(clientConnection); }
+      },
+
       initPromise = cu.generateAESKey().then(function (key) {
-        aesKey = key;
+        clientConnection.aesKey = key;
         return cu.wrapAESKey(key, JSON.parse(pubKey)).then(function (wrappedKey) {
           var iv = cu.generateNonce(),
             pubInfo = onion.getPublicChainInformation(),
@@ -59,56 +77,40 @@ window.stillepost.onion.clientConnection = (function() {
       rejectProm("Connection could not be established: Timeout");
     }, 10000);
 
-    var clientConnection = {
-      initialized: false,
-      seqNum: 1,
-      send: function (message) {
-        return answerPromise.then(function () {
-          var iv = cu.generateNonce();
-          return cu.encryptAES(JSON.stringify(message), aesKey, iv).then(function (encData) {
-            return cu.encryptRSA(JSON.stringify({connectionId: connectionId, seqNum: clientConnection.seqNum++}), clientConnection.publicKey).then(function(encConnectionData) {
-              var msg = {
-                message: {data: encData, connectionData: encConnectionData, iv: iv},
-                chainId: chainId,
-                socket: {address: address, port: port}
-              };
-              return onion.sendMessage("clientMessage", msg);
-            });
-          });
-        }).catch(function (err) {
-          console.log('Error while sending message: ', err);
-          clientConnection.onerror(err);
-        });
-      },
-      onerror: function (err) {
-        console.log('Error in client connection', err);
-      },
-
-      onmessage: function (message) {
-        console.log('onmessage: ', message);
-      },
+    clientConnection.send = function (message) {
+      return answerPromise.then(function () {
+        return sendClientMessage(message, clientConnection);
+      }).catch(function (err) {
+        console.log('Error while sending message: ', err);
+        clientConnection.onerror(err);
+      });
+    };
       // event callback, which is called upon receiving the answer from the other client. It is expected that this callback is overwritten
       // by the caller of the createClientConnection function
-      processMessage: function (messageObj) {
-        cu.decryptAES(messageObj.data, aesKey, objToAb(messageObj.iv)).then(function (decData) {
-          var jsonData = JSON.parse(decData);
-          if (clientConnection.initialized) {
-            clientConnection.onmessage(jsonData);
-          }
-          else if (JSON.stringify(jsonData.chainConnectionId) === JSON.stringify(clientConnection.connectionId)) {
-            clientConnection.initialized = true;
-            resolveProm();
-          }
-          else
-            rejectProm("Received invalid initialization response from other client");
-
-        }).catch(function (err) {
-          clientConnection.onerror(err);
-        });
-      }
+    clientConnection.processMessage = function (messageObj) {
+      cu.decryptAES(messageObj.data, clientConnection.aesKey, objToAb(messageObj.iv)).then(function (decData) {
+        var jsonData = JSON.parse(decData);
+        // check if remote client closed the connection
+        if (jsonData.state === connectionState.closed) {
+          clientConnection.connectionState = connectionState.closed;
+          delete clientConnections[ab2str32(clientConnection.connectionId)];
+        }
+        // if connection already initialized - trigger onmessage
+        else if (clientConnection.connectionState === connectionState.ready) {
+          clientConnection.onmessage(jsonData);
+        }
+        // check if init successful
+        else if (jsonData.connectionState === connectionState.ready && JSON.stringify(jsonData.chainConnectionId) === JSON.stringify(clientConnection.connectionId)) {
+          clientConnection.connectionState = connectionState.ready;
+          resolveProm();
+        } else {
+          var errorMsg = jsonData.errorMessage ? jsonData.errorMessage : "Unknown error";
+          rejectProm(errorMsg);
+        }
+      }).catch(function (err) {
+        clientConnection.onerror(err);
+      });
     };
-    clientConnection.publicKey = pubKey;
-    clientConnection.connectionId = connectionId;
     clientConnections[ab2str32(connectionId)] = clientConnection;
     return clientConnection;
   };
@@ -135,46 +137,68 @@ window.stillepost.onion.clientConnection = (function() {
 
       cu.unwrapAESKey(jsonData.keyData, _clientConPrivateKey).then(function(key) {
         return cu.decryptAES(jsonData.data, key, objToAb(jsonData.iv)).then(function(decryptedMessage) {
-          var decMsgJson = JSON.parse(decryptedMessage);
-          var connection = {
+          var decMsgJson = JSON.parse(decryptedMessage),
+          connection = {
             seqNum: 1,
-            send: function(messageContent) {
-              var iv = cu.generateNonce();
-
-              return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv).then(function(encData) {
-                return cu.encryptRSA(JSON.stringify({connectionId: connection.connectionId, seqNum: connection.seqNum++}), connection.publicKey).then(function(encConnectionData) {
-                  var msg = {message: {data: encData, connectionData: encConnectionData, iv: iv}, chainId: decMsgJson.chainId, socket: decMsgJson.socket};
-                  onion.sendMessage('clientMessage', msg);
+            chainId: decMsgJson.chainId,
+            socket: decMsgJson.socket,
+            connectionId: objToAb(decMsgJson.connectionId),
+            aesKey: key,
+            publicKey: decMsgJson.publicKey,
+            connectionState: connectionState.ready,
+            send: function (messageContent) {
+              return sendClientMessage(messageContent, connection);
+            },
+            onerror: function (err) { console.log('Error in client connection', err); },
+            onmessage: function (message) { console.log('onmessage: ', message); },
+            processMessage: function (messageObj) {
+              cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv)).then(JSON.parse).
+                then(connection.onmessage).catch(function (err) {
+                  connection.onerror(err);
                 });
-              });
             },
-            onmessage: function(message) {
-              console.log('onmessage: ',message);
-            },
-            onerror: function(err) {
-              console.log('Error in client connection',err);
-            },
-            processMessage: function(messageObj) {
-              cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv)).then(function(decData) {
-                connection.onmessage(JSON.parse(decData));
-              }).catch(function(err) {
-                connection.onerror(err);
-              });
-            }
-          };
-          connection.connectionId = objToAb(decMsgJson.connectionId);
-          connection.aesKey = key;
-          connection.publicKey = decMsgJson.publicKey;
-          clientConnections[ab2str32(connection.connectionId)] = connection;
-          connection.send({chainConnectionId: connection.connectionId});
-          window.stillepost.onion.interfaces.onClientConnection(connection);
+            close: function() {closeConnection(connection);}
+          },
+          // connection with this id already exists - return error
+          con = clientConnections[ab2str32(connection.connectionId)];
+          if (con) {
+            connection.send({connectionState: 'error', errorMessage: 'ConnectionId already used'});
+          } else {
+            clientConnections[ab2str32(connection.connectionId)] = connection;
+            // sending ack-message to init request
+            connection.send({connectionState: connectionState.ready, chainConnectionId: connection.connectionId});
+            window.stillepost.onion.interfaces.onClientConnection(connection);
+          }
+        }, function(err) {
+          console.log('Error while decrypting AES key',err);
         });
       }).catch(function(err) {
-        console.log('Received client connection with invalid key',err);
+        console.log('Error while processing client connection',err);
       });
     }
 
   };
+
+  function closeConnection(connection) {
+    connection.send({connectionState: connectionState.closed}).then(function() {
+      connection.connectionState = connectionState.closed;
+      delete clientConnections[ab2str32(connection.connectionId)];
+    });
+  }
+
+  function sendClientMessage(messageContent, connection) {
+    if (connection.connectionState === connectionState.ready) {
+      var iv = cu.generateNonce();
+      return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv).then(function (encData) {
+        return cu.encryptRSA(JSON.stringify({connectionId: connection.connectionId, seqNum: connection.seqNum++}), connection.publicKey).then(function (encConnectionData) {
+          var msg = {message: {data: encData, connectionData: encConnectionData, iv: iv}, chainId: connection.chainId, socket: connection.socket};
+          return onion.sendMessage('clientMessage', msg);
+        });
+      });
+    } else {
+      throw Error('Connection not in ready state. Current State: '+connection.connectionState);
+    }
+  }
 
   public.onClientConnection = function(connection) {
     console.log('onclientMessage called with connection: ', connection);

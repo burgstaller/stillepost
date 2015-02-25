@@ -195,14 +195,11 @@ window.stillepost.webrtc = (function() {
 
   WebRTCConnection.prototype.send = function(data) {
     return this._promise.then(function() {
-      return new Promise(function (resolve, reject) {
-        if (this._dataChannel.readyState === "closed") {
-          reject();
-        } else {
-          this._dataChannel.send(JSON.stringify(data));
-          resolve();
-        }
-      }.bind(this));
+      if (this._dataChannel.readyState === "closed") {
+        throw Error('Could not send message - dataChannel is closed');
+      } else {
+        this._dataChannel.send(JSON.stringify(data));
+      }
     }.bind(this));
   };
 

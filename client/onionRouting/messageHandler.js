@@ -137,6 +137,10 @@ window.stillepost.onion.messageHandler = (function() {
   var queue = {
     entries: [],
     busy: false,
+    error: function(err) {
+      onion.sendError(err.errorMessage, err.errorObj, err.webRTCConnection);
+      queue.shift();
+    },
     add: function(func) {
       if (this.entries.length > 0 || this.busy)
         this.entries.push(func);
@@ -155,9 +159,6 @@ window.stillepost.onion.messageHandler = (function() {
     processMessage: function(message) {
       messageCallback(message);
       queue.shift();
-    },
-    error: function(err) {
-      onion.sendError(err.errorMessage, null, err.webRTCConnection);
     }
   };
 
@@ -186,10 +187,10 @@ window.stillepost.onion.messageHandler = (function() {
           delete onion.chainMap[message.chainId];
           resolve({message: message, node: node, webRTCConnection: webRTCConnection});
         }).catch(function(err) {
-          reject({errorMessage: err, webRTCConnection: webRTCConnection});
+          reject({errorMessage: err, webRTCConnection: webRTCConnection, errorObj: Error()});
         });
       } else {
-        reject({errorMessage: "Received invalid chainId", webRTCConnection: webRTCConnection});
+        reject({errorMessage: "Received invalid chainId", webRTCConnection: webRTCConnection, errorObj: Error()});
       }
     });
   }

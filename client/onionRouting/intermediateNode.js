@@ -81,12 +81,18 @@ window.stillepost.onion.intermediateNode = (function() {
     decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
 
     decWorker.onmessage = function(workerMessage) {
-      if (workerMessage.data.data)
+
+      var hashErrorCallback = function (error){
+        //error callback for hash operation
+        console.log('error in decWorkerListener: ', error);
+        webRTCConnection.close();
+      };
+
+      if (workerMessage.data.success) {
         workerMessage.data.data = JSON.parse(workerMessage.data.data);
-      // Try to compute Hash for next node
-      cu.hashArrayObjects([cu.uInt32Concat(node.chainIdOut, node.seqNumWrite),
-        JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data.chainData})]).then(function(digestArray) {
-        if (workerMessage.data.success) {
+        // Try to compute Hash for next node
+        cu.hashArrayObjects([cu.uInt32Concat(node.chainIdOut, node.seqNumWrite),
+          JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data.chainData})]).then(function(digestArray) {
           var con = webrtc.createConnection(node.socket.address, node.socket.port),
             command = {
               commandName: message.commandName,
@@ -95,18 +101,17 @@ window.stillepost.onion.intermediateNode = (function() {
               chainData: workerMessage.data.data.chainData,
               checksum: digestArray[1]
             };
-          con.send(command).catch(function(err) {
+          con.send(command).catch(function (err) {
             return webRTCConnection.send({commandName: "error", chainId: digestArray[0], errorMessage: {message: "Error while sending message to next node", error: err}});
           });
-        } else {
+        }).catch(hashErrorCallback);
+      } else {
+        // Try to compute Hash for next node
+        cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
           //in decryption case send error to previous node in chain
-          return webRTCConnection.send({commandName: "error", chainId: digestArray[0], errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
-        }
-      }).catch(function (error){
-        //error callback for hash operation
-        console.log('error in decWorkerListener: ', error);
-        webRTCConnection.close();
-      });
+          return webRTCConnection.send({commandName: "error", chainId: digest, errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
+        }).catch(hashErrorCallback);
+      }
     };
   };
 

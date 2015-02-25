@@ -14,6 +14,10 @@ window.stillepost.onion.onionRouting = (function() {
     _isMasterChainCreated = false,
     _createChainPromise = null,
     _uuid = null,
+    // current amount of tries to connect to the directory server
+    _curDirectoryTryCount = 0,
+    // maximum amount of tries to connect to the directory server
+    _maxDirectoryTryCount = 3,
     _localSocket = {},
 
   //Id of the chain in which this node is the master
@@ -57,22 +61,27 @@ window.stillepost.onion.onionRouting = (function() {
         _localSocket.address = entry.address;
         _localSocket.port = entry.port;
         entry.key = pubKey;
-        console.log("Registering at directory server as ",entry);
-        var xhr = new XMLHttpRequest();
-        xhr.onload = function () {
-          var response = JSON.parse(this.responseText);
-          console.log("Directory server responded register request with: ", response);
-          if (response.msg === "OK") {
-            _uuid = response.data;
-            console.log("Successfully registered at directory server with uuid " + response.data);
-          }
+        var registerAtDirectory = function()
+        {
+          console.log("Registering at directory server as ", entry);
+          var xhr = new XMLHttpRequest();
+          xhr.onload = function () {
+            var response = JSON.parse(this.responseText);
+            console.log("Directory server responded register request with: ", response);
+            if (response.msg === "OK") {
+              _uuid = response.data;
+              console.log("Successfully registered at directory server with uuid " + response.data);
+            }
+          };
+          xhr.onerror = function (e) {
+            console.log("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
+            if (_curDirectoryTryCount < _maxDirectoryTryCount)
+              registerAtDirectory();
+          };
+          xhr.open("post", directoryServerUrl + "/register", true);
+          xhr.send(JSON.stringify(entry));
         };
-        xhr.onerror = function(e) {
-          // todo: error handling
-          console.log("Failed to register at directory server"+ e.target.status);
-        };
-        xhr.open("post", directoryServerUrl + "/register", true);
-        xhr.send(JSON.stringify(entry));
+        registerAtDirectory();
       });
 
     }).catch(function(err) {
@@ -243,7 +252,7 @@ window.stillepost.onion.onionRouting = (function() {
             promise = new Promise(function(resolve,reject) {
               _masterChainCreated = resolve;
               _masterChainError = reject;
-              setTimeout(10000,function() {
+              setTimeout(7000,function() {
                 if (!_isMasterChainCreated) {
                   reject("Create chain Timeout");
                 }
@@ -402,7 +411,8 @@ window.stillepost.onion.onionRouting = (function() {
           }
         };
         return connection.send(errorMsg);
-      }).catch(function() {
+      }).catch(function(err) {
+        console.log('Caught error in sendError',err);
         connection.close();
       });
     } else if (connection) {
