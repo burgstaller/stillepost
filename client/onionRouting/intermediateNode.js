@@ -115,9 +115,5 @@ window.stillepost.onion.intermediateNode = (function() {
     };
   };
 
-  public.clientMessage = function(message, decData, node) {
-    public.message(message, decData, node);
-  };
-
   return public;
 })();

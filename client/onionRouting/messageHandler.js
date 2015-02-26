@@ -77,7 +77,9 @@ window.stillepost.onion.messageHandler = (function() {
   function messageCallback(message) {
     if (message.node) {
       if (message.node.type === "decrypt") {
-        intermediateNode[message.message.commandName](message.message, message.node, message.webRTCConnection);
+        var fn = (typeof intermediateNode[message.message.commandName] === 'function') ?
+          intermediateNode[message.message.commandName] : intermediateNode.message;
+        fn(message.message, message.node, message.webRTCConnection);
       } else if (message.node.type === "exit") {
         exitNode[message.message.commandName](message.message, message.node, message.webRTCConnection);
       } else {
@@ -160,16 +162,6 @@ window.stillepost.onion.messageHandler = (function() {
       messageCallback(message);
       queue.shift();
     }
-  };
-
-  // Function wrapping code.
-  // fn - reference to function.
-  // context - what you want "this" to be.
-  // params - array of parameters to pass to function.
-  var wrapFunction = function(fn, context, params) {
-    return function() {
-      return fn.apply(context, params);
-    };
   };
 
   function updateChainMap(message, webRTCConnection) {

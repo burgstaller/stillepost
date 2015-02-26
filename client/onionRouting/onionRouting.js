@@ -18,6 +18,10 @@ window.stillepost.onion.onionRouting = (function() {
     _curDirectoryTryCount = 0,
     // maximum amount of tries to connect to the directory server
     _maxDirectoryTryCount = 3,
+    // current amount of tries to create a chain
+    _curCreateChainTryCount = 0,
+    // maximum amount of tries to create a chain
+    _maxCreateChainTryCount = 15,
     _localSocket = {},
 
   //Id of the chain in which this node is the master
@@ -77,6 +81,8 @@ window.stillepost.onion.onionRouting = (function() {
             console.log("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
             if (_curDirectoryTryCount < _maxDirectoryTryCount)
               registerAtDirectory();
+            else
+              public.onerror('chainerror', 'Could not connect to directory server');
           };
           xhr.open("post", directoryServerUrl + "/register", true);
           xhr.send(JSON.stringify(entry));
@@ -148,8 +154,8 @@ window.stillepost.onion.onionRouting = (function() {
         }
       };
       xhr.onerror = function(e) {
-        console.log("Failed to load nodes from directory server" + e.target.status);
-        reject(e.target);
+        var errorMsg = e.target.statusText ? e.target.statusText : "Failed to load nodes from directory server";
+        reject(errorMsg);
       };
       xhr.open("get", directoryServerUrl + "/nodelist/" + _uuid, true);
       xhr.send();
@@ -214,7 +220,7 @@ window.stillepost.onion.onionRouting = (function() {
 
   //requests list of nodes, creates layered 'create' request and sends it to the first node in the chain.
   // Member _masterChainCreate is the Promise, which needs to be resolved on receiving acknowledge-Message from exit node
-  createChain = function(){
+  createChain = function() {
     return retrieveNodes().then(function(nodes) {
       if (nodes.length < chainSize) {
         throw "Retrieved node count less than the required chainSize";
@@ -232,44 +238,35 @@ window.stillepost.onion.onionRouting = (function() {
         }
         chainIdMaster = chainIds[0];
         // pre-compute expected chainId hash
-        cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumRead)).then(function(digest) {
+        return cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumRead)).then(function(digest) {
           masterHash = digest;
-        }, function(err) {
-          throw err;
-        });
 
-        // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
-        _masterChainNonce = cu.generateNonce();
-        var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce};
-        return createBuildMessage(keys, nodes, dataExitNode, chainIds).then(function(data) {
+          // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
+          _masterChainNonce = cu.generateNonce();
+          var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce};
+          return createBuildMessage(keys, nodes, dataExitNode, chainIds).then(function(data) {
+            _entryNodeSocket = nodes[chainSize-1].socket;
+            _exitNodeSocket = nodes[0].socket;
+            var command = {commandName: 'build', keyData: data.keyData, chainData: data.chainData, iv: data.iv};
+            console.log("created command: ", command);
 
-          _entryNodeSocket = nodes[chainSize-1].socket;
-          _exitNodeSocket = nodes[0].socket;
-          var command = {commandName: 'build', keyData: data.keyData, chainData: data.chainData, iv: data.iv};
-          console.log("created command: ", command);
-
-          var con = new webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
-            promise = new Promise(function(resolve,reject) {
-              _masterChainCreated = resolve;
-              _masterChainError = reject;
-              setTimeout(7000,function() {
-                if (!_isMasterChainCreated) {
-                  reject("Create chain Timeout");
-                }
+            var con = new webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
+              promise = new Promise(function(resolve,reject) {
+                _masterChainCreated = resolve;
+                _masterChainError = reject;
+                setTimeout(function() {
+                  if (!_isMasterChainCreated) {
+                    reject("Create chain Timeout");
+                  }
+                }, 7000);
               });
+            con.send(command).catch(function(err) {
+              _masterChainError(err);
             });
-          con.send(command).catch(function(err) {
-            _masterChainError(err);
+            return promise;
           });
-          return promise;
-        }, function (err) {
-          console.log("Error while building layers", err);
         });
-      }, function(err) {
-        console.log("Error while generating AES keys",err);
       });
-    }, function(err) {
-      console.log('Error building chain',err);
     });
   },
 
@@ -340,6 +337,9 @@ window.stillepost.onion.onionRouting = (function() {
         _pubChainId = data.pubChainId;
         _masterChainCreated();
         _isMasterChainCreated = true;
+        if (_curCreateChainTryCount > 0)
+          public.onnotification('renew', {msg: 'Renewed chain', data: public.getPublicChainInformation()});
+        _curCreateChainTryCount = 0;
       } else {
         _masterChainError("Received invalid nonce from exit node");
       }
@@ -376,27 +376,6 @@ window.stillepost.onion.onionRouting = (function() {
       });
     }
   };
-
-  function sendMessage(commandName, message) {
-    // init chain
-    if (!_isMasterChainCreated) {
-      if (!_createChainPromise) {
-        _createChainPromise = createChain();
-      }
-      _createChainPromise.then(function () {
-        console.log("created Chain");
-        _isMasterChainCreated = true;
-        return sendChainMessage(commandName, message);
-      }).catch(function(err) {
-        // todo: handle error
-        console.log("error creating chain: ",err);
-        resetMasterChain();
-      });
-    } else {
-      // send message over chain
-      return sendChainMessage(commandName, message);
-    }
-  }
 
   function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite) {
     console.log(errorMessage, errorObj, connection, chainId);
@@ -468,14 +447,64 @@ window.stillepost.onion.onionRouting = (function() {
     _masterChainNonce = null;
   }
 
+  function sendMessage(commandName, message) {
+    // init chain
+    if (!_isMasterChainCreated) {
+      if (!_createChainPromise) {
+        _createChainPromise = createChain();
+      }
+      return _createChainPromise.then(function () {
+        console.log("created Chain");
+        _isMasterChainCreated = true;
+        return sendChainMessage(commandName, message);
+      }).catch(function(err) {
+        console.log('sendMessage createChain error recovery',err);
+        chainErrorRecovery(err, wrapFunction(sendMessage,this,[commandName, message]));
+      });
+    } else {
+      // send message over chain
+      return sendChainMessage(commandName, message).catch(function(err) {
+        console.log('sendMessage createChain error recovery',err);
+        chainErrorRecovery(err, wrapFunction(sendMessage,this,[commandName, message]));
+      });
+    }
+  }
+
+  function chainErrorRecovery(err, callback) {
+    console.log("error creating chain: ",err);
+    public.onerror('builderror', err);
+
+    resetMasterChain();
+    if (_curCreateChainTryCount++ < _maxCreateChainTryCount) {
+      var delay = (_curCreateChainTryCount^2) * 100,
+        callbackFunction = callback ? callback : public.createChain;
+      delay = delay > 5000 ? 5000 : delay;
+      setTimeout(wrapFunction(function(callbackFunction) {
+          callbackFunction();
+      }, this, [callbackFunction]), delay);
+    } else {
+      public.onerror('chainerror','Maximum amount of chain build attempts reached');
+    }
+  }
+
   public.createChain = function() {
     if (!_createChainPromise)
-      _createChainPromise = createChain();
+      _createChainPromise = createChain().catch(function(err) {
+        return chainErrorRecovery(err);
+      });
     return _createChainPromise;
   };
 
   public.getPublicChainInformation = function() {
     return {socket: _exitNodeSocket, chainId: _pubChainId};
+  };
+
+  public.onerror = function(type, errorThrown) {
+    console.error('#####################onionlayer on error called with ',type, errorThrown);
+  };
+
+  public.onnotification = function(type, notificationText) {
+    console.info('######################onionlayer onnotification called with type: ',type,notificationText);
   };
 
   public.init = function() {
@@ -485,10 +514,6 @@ window.stillepost.onion.onionRouting = (function() {
     intermediateNode = window.stillepost.onion.intermediateNode;
     clientConnection = window.stillepost.onion.clientConnection;
   };
-
-  public.chainMap = chainMap;
-
-  public.encWorkerListener = encWorkerListener;
 
   public.peerDisconnected = function(remoteAddress, remotePort) {
     console.log("peer disconnected");
@@ -518,6 +543,28 @@ window.stillepost.onion.onionRouting = (function() {
     }
   };
 
+  public.cleanUp = function() {
+    resetMasterChain();
+    var xhr = new XMLHttpRequest(),
+      message = {socket: _localSocket, id: _uuid};
+    xhr.onload = function () {
+      var response = JSON.parse(this.responseText);
+      console.log("Directory server responded logout request with: ", response);
+      if (response.msg === "OK") {
+        console.log("Successfully logged out from directory server");
+      }
+    };
+    xhr.onerror = function(e) {
+      console.error("Failed to logout from directory server ", e.target);
+    };
+    xhr.open("post", directoryServerUrl + "/logout", true);
+    xhr.send(JSON.stringify(message));
+  };
+
+  public.chainMap = chainMap;
+
+  public.encWorkerListener = encWorkerListener;
+
   public.sendError = sendError;
 
   public.localSocket = _localSocket;
@@ -533,35 +580,6 @@ window.stillepost.onion.onionRouting = (function() {
   public.chainError = function (err) {_masterChainError(err);};
 
   public.handleBuildResponse = handleBuildResponse;
-
-  public.cleanUp = function() {
-    resetMasterChain();
-    var xhr = new XMLHttpRequest(),
-      message = {socket: _localSocket, id: _uuid};
-    xhr.onload = function () {
-      var response = JSON.parse(this.responseText);
-      console.log("Directory server responded logout request with: ", response);
-      if (response.msg === "OK") {
-        console.log("Successfully logged out from directory server");
-      }
-    };
-    xhr.onerror = function(e) {
-      console.log("Failed to logout from directory server ", e.target);
-    };
-    xhr.open("post", directoryServerUrl + "/logout", true);
-    xhr.send(JSON.stringify(message));
-    if (_beforeUnload)
-      _beforeUnload();
-  };
-
-  // cleanup when browser or tab is closed
-  // todo: remove if no longer necessary
-  var _beforeUnload = window.onbeforeunload;
-  window.onbeforeunload = function() {
-    public.cleanUp();
-    if (_beforeUnload)
-      _beforeUnload();
-  };
 
   //interface function to generically send a new message over the master chain
   public.sendMessage = function(messageType, message) {

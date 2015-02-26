@@ -82,6 +82,11 @@ window.stillepost.onion.interfaces = (function() {
    */
   public.onClientConnection = clientConnection.onClientConnection;
 
+  public.onionlayer = {
+    onerror: onion.onerror,
+    onnotification: onion.onnotification
+  };
+
   public.aajax = function() {
     // todo
   };

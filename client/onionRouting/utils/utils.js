@@ -61,3 +61,13 @@ function str2ab(str) {
   }
   return buf;
 }
+
+// Function wrapping code.
+// fn - reference to function.
+// context - what you want "this" to be.
+// params - array of parameters to pass to function.
+function wrapFunction(fn, context, params) {
+  return function() {
+    return fn.apply(context, params);
+  };
+}

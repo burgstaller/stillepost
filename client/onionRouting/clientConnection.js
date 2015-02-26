@@ -29,18 +29,7 @@ window.stillepost.onion.clientConnection = (function() {
     if (!(address && port && chainId && pubKey && onion.getPublicChainInformation().chainId))
       throw 'Invalid parameters in createClientConnection';
     var connectionId = cu.generateNonce(),
-      clientConnection = {
-        connectionState: connectionState.init,
-        seqNum: 1,
-        publicKey: pubKey,
-        connectionId: connectionId,
-        socket: {address: address, port: port},
-        chainId: chainId,
-        aesKey: null,
-        onerror: function (err) { console.log('Error in client connection', err); },
-        onmessage: function (message) { console.log('onmessage: ', message); },
-        close: function() { closeConnection(clientConnection); }
-      },
+      clientConnection = createConnectionObj(chainId, {address: address, port: port}, connectionId, null, pubKey, connectionState.init),
 
       initPromise = cu.generateAESKey().then(function (key) {
         clientConnection.aesKey = key;
@@ -90,13 +79,9 @@ window.stillepost.onion.clientConnection = (function() {
     clientConnection.processMessage = function (messageObj) {
       cu.decryptAES(messageObj.data, clientConnection.aesKey, objToAb(messageObj.iv)).then(function (decData) {
         var jsonData = JSON.parse(decData);
-        // check if remote client closed the connection
-        if (jsonData.state === connectionState.closed) {
-          clientConnection.connectionState = connectionState.closed;
-          delete clientConnections[ab2str32(clientConnection.connectionId)];
-        }
+
         // if connection already initialized - trigger onmessage
-        else if (clientConnection.connectionState === connectionState.ready) {
+        if (handleConnectionStateUpdate(clientConnection, jsonData).connectionState === connectionState.ready) {
           clientConnection.onmessage(jsonData);
         }
         // check if init successful
@@ -114,6 +99,47 @@ window.stillepost.onion.clientConnection = (function() {
     clientConnections[ab2str32(connectionId)] = clientConnection;
     return clientConnection;
   };
+
+  function createConnectionObj(chainId, socket, connectionId, aesKey, publicKey, connectionStateValue) {
+    var connection =  {
+      seqNum: 1,
+      chainId: chainId,
+      socket: socket,
+      connectionId: connectionId,
+      aesKey: aesKey,
+      publicKey: publicKey,
+      connectionState: connectionStateValue,
+      send: function (messageContent) {
+        return sendClientMessage(messageContent, connection);
+      },
+      onerror: function (err) { console.log('Error in client connection', err); },
+      onmessage: function (message) { console.log('onmessage: ', message); },
+      onclose: function() { console.log('connection onclose triggered')},
+      processMessage: function (messageObj) {
+        cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv)).then(function(decData) {
+          var jsonData = JSON.parse(decData);
+          if (handleConnectionStateUpdate(connection, jsonData).connectionState === connectionState.ready) {
+            connection.onmessage(jsonData);
+          }
+        }).catch(function (err) {
+          connection.onerror(err);
+        });
+      },
+      close: function() { closeConnection(connection);}
+    };
+    return connection;
+  }
+
+  function handleConnectionStateUpdate(connection, message) {
+    // check if remote client closed the connection
+    if (message.connectionState === connectionState.closed) {
+      connection.connectionState = connectionState.closed;
+      delete clientConnections[ab2str32(connection.connectionId)];
+      connection.onclose();
+    }
+
+    return connection;
+  }
 
   public.processClientMessage = function(decChainData) {
     console.log("decrypted data: ", decChainData);
@@ -138,27 +164,9 @@ window.stillepost.onion.clientConnection = (function() {
       cu.unwrapAESKey(jsonData.keyData, _clientConPrivateKey).then(function(key) {
         return cu.decryptAES(jsonData.data, key, objToAb(jsonData.iv)).then(function(decryptedMessage) {
           var decMsgJson = JSON.parse(decryptedMessage),
-          connection = {
-            seqNum: 1,
-            chainId: decMsgJson.chainId,
-            socket: decMsgJson.socket,
-            connectionId: objToAb(decMsgJson.connectionId),
-            aesKey: key,
-            publicKey: decMsgJson.publicKey,
-            connectionState: connectionState.ready,
-            send: function (messageContent) {
-              return sendClientMessage(messageContent, connection);
-            },
-            onerror: function (err) { console.log('Error in client connection', err); },
-            onmessage: function (message) { console.log('onmessage: ', message); },
-            processMessage: function (messageObj) {
-              cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv)).then(JSON.parse).
-                then(connection.onmessage).catch(function (err) {
-                  connection.onerror(err);
-                });
-            },
-            close: function() {closeConnection(connection);}
-          },
+            connection = createConnectionObj(decMsgJson.chainId, decMsgJson.socket, objToAb(decMsgJson.connectionId), key,
+              decMsgJson.publicKey, connectionState.ready),
+
           // connection with this id already exists - return error
           con = clientConnections[ab2str32(connection.connectionId)];
           if (con) {
