@@ -2,6 +2,8 @@ var restify = require('restify'),
     uuid = require('uuid'),
     crypto = require('crypto');
 
+var heartbeatTimeout = 10000,
+    heartbeatInterval = 5000;
 // Server
 var server = restify.createServer({
     name: 'chat-server',
@@ -36,12 +38,13 @@ var chatClients = function(){
         list[hash].key = key;
         list[hash].sessionKey = sessionKey;
         list[hash].hash = hash;
+        list[hash].heartbeat = new Date().getTime();
 
         return "OK";
     };
     pub.getClientList = function(hash, sessionKey){
         if(list[hash].sessionKey !== sessionKey)
-            return {error:"sessionKey invalid"};
+            return "SessionKey invalid";
         var exportList = {};
         for (var client in list) {
             if (list.hasOwnProperty(client) && client !== hash) {
@@ -62,8 +65,30 @@ var chatClients = function(){
         delete list[hash];
         return "OK";
     };
+    pub.updateHeartbeat = function(hash, sessionKey){
+        if(typeof(list[hash]) === "undefined")
+            return {error:"User does not exist"};
+        if(list[hash].sessionKey !== sessionKey)
+            return {error:"sessionKey invalid"};
+        list[hash].heartbeat = new Date().getTime();
+        return "OK";
+    };
+    pub.checkHeartbeats = function(){
+        var curTime = new Date().getTime();
+        for (var client in list) {
+            if (list.hasOwnProperty(client) && list[client].heartbeat + heartbeatTimeout <= curTime) {
+                console.log("client timed out (sk="+list[client].sessionKey+", pk="+list[client].key+")\n");
+                delete list[client];
+            }
+        }
+    };
     return pub;
 }();
+
+setInterval(function(){
+    console.log("checkingHeartbeats");
+    chatClients.checkHeartbeats();
+}, heartbeatInterval);
 
 // for testing
 // curl -H "Content-Type: application/json" -X POST "http://localhost:42112/user" -d '{"key":"test","username":"testuser","chainid":4,"socket":"1234"}'
@@ -81,7 +106,8 @@ server.post('/user', function (req, res, next) {
     var msg = chatClients.addClient(body.username, body.socket, body.chainid, body.key, sessionKey);
     if(msg !== "OK")
         res.send(400, createResponseObject(msg));
-    res.send(200, createResponseObject('OK', {"sessionKey":sessionKey}));
+    else
+        res.send(200, createResponseObject('OK', {"sessionKey":sessionKey}));
     return next();
 });
 
@@ -93,7 +119,11 @@ server.get('/user', function (req, res, next) {
     var sessionKey = req.query.sessionKey;
     var keyHash = req.query.keyHash;
     console.log("received userlist request from sessionKey:"+sessionKey);
-    res.send(200, createResponseObject('OK', chatClients.getClientList(keyHash, sessionKey)));
+    var clients = chatClients.getClientList(keyHash, sessionKey);
+    if(typeof(clients) === "string")
+        res.send(400, createResponseObject(clients));
+    else
+        res.send(200, createResponseObject('OK', clients));
     return next();
 });
 
@@ -108,7 +138,22 @@ server.del('/user/:keyHash', function (req, res, next) {
     var msg = chatClients.removeClient(keyHash, sessionKey);
     if(msg !== "OK")
         res.send(400, createResponseObject(msg));
-    res.send(200, createResponseObject('OK'));
+    else
+        res.send(200, createResponseObject('OK'));
+    return next();
+});
+
+server.put('/user/:keyHash', function (req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "X-Requested-With");
+    var sessionKey = req.params.sessionKey;
+    var keyHash = req.params.keyHash;
+    console.log("received heartbeat from sessionKey: "+sessionKey+" and hash: "+keyHash);
+    var msg = chatClients.updateHeartbeat(keyHash, sessionKey);
+    if(msg !== "OK")
+        res.send(400, createResponseObject(msg));
+    else
+        res.send(200, createResponseObject('OK'));
     return next();
 });
 

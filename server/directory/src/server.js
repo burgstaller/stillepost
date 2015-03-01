@@ -10,64 +10,99 @@ server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.bodyParser());
 
-var nodes = {},
-    nodesArray = [],
-    idRegistry = {};
+var heartbeatTimeout = 10000,
+    heartbeatInterval = 5000;
 
+var nodes = function(){
+    var pub = {},
+        list = {};
+    pub.addNode = function(node){
+        list[node.id] = {};
+        list[node.id].id = node.id;
+        list[node.id].socket = node.socket;
+        list[node.id].key = node.key;
+        list[node.id].heartbeat = node.heartbeat;
 
-// adds a new node to both the map and array of nodes
-// if a entry was already present for a given socket, we need to update
-nodes.addEntry = function (entry) {
-    if (typeof(nodes[getNodeKey(entry.socket)]) !== "undefined") {
-        for (var i = 0; i < nodesArray.length; i++) {
-            if (getNodeKey(nodesArray[i].socket) === getNodeKey(entry.socket))
-                nodesArray[i] = entry;
+        return "OK";
+    };
+    pub.getNodeList = function(id){
+        if(typeof(list[id]) === "undefined")
+            return "No such node registered";
+        var exportList = [];
+        for (var node in list) {
+            if (list.hasOwnProperty(node)) {
+                exportList.push(list[node]);
+            }
         }
-    }
-    else {
-        nodesArray.push(entry);
-    }
-    nodes[getNodeKey(entry.socket)] = entry;
-    idRegistry[entry.id] = true;
-};
+        return exportList;
+    };
+    pub.removeNode = function(id){
+        if(typeof(list[id]) === "undefined")
+            return {error:"Node does not exist"};
+        delete list[id];
+        return "OK";
+    };
+    pub.updateHeartbeat = function(id){
+        if(typeof(list[id]) === "undefined")
+            return {error:"Node does not exist"};
+        list[id].heartbeat = new Date().getTime();
+        return "OK";
+    };
+    pub.checkHeartbeats = function(){
+        var curTime = new Date().getTime();
+        for (var node in list) {
+            if (list.hasOwnProperty(node) && list[node].heartbeat + heartbeatTimeout <= curTime) {
+                console.log("client timed out (sk="+list[node].sessionKey+", pk="+list[node].key+")\n");
+                delete list[node];
+            }
 
-//removes a node from all datastructures
-nodes.deleteEntry = function (socket) {
-    delete idRegistry[nodes[getNodeKey(socket)].id];
-    delete nodes[getNodeKey(socket)];
-
-    for (var i = 0; i < nodesArray.length; i++) {
-        if (getNodeKey(nodesArray[i].socket) === getNodeKey(socket)) {
-            nodesArray.splice(i, 1);
-            return true;
         }
-    }
-    return false;
-};
+    };
+    return pub;
+}();
+
+setInterval(function(){
+    console.log("checkingHeartbeats");
+    nodes.checkHeartbeats();
+}, heartbeatInterval);
 
 //returns the list of all registered nodes
-server.get('/nodelist/:id', function (req, res, next) {
+server.get('/node/:id', function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
 
     var id = req.params.id;
-    if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
-        res.send(400, createResponseObject('Id is missing or wrong'));
+    if(typeof(id) === "undefined")
+        res.send(400, createResponseObject('Id is missing'));
+    else{
+        var nodelist = nodes.getNodeList(id);
+        if(typeof(nodelist) === "string")
+            res.send(400, createResponseObject(nodelist));
+        else
+            res.send(200, createResponseObject('OK', nodelist));
+    }
 
-    res.send(200, createResponseObject("OK", nodesArray));
     next();
 });
 
-//each node has to send heardbeat to the directory server
+//each node has to send heartbeat to the directory server
 //otherwise it will be assumed, that the node went offline
-server.get('/heartbeat/:id', function (req, res, next) {
+server.put('/node/:id', function (req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var id = req.params.id;
-    if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
+    if(typeof(id) === "undefined")
         res.send(400, createResponseObject('Id is missing or wrong'));
-    res.send(200, createResponseObject('OK'));
+    else{
+        var msg = nodes.updateHeartbeat(id);
+        if(msg !== "OK")
+            res.send(400, createResponseObject(msg));
+        else
+            res.send(200, createResponseObject('OK'));
+    }
     return next();
 });
-server.post('/register', function (req, res, next) {
+server.post('/node', function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var body = JSON.parse(req.body);
@@ -76,7 +111,7 @@ server.post('/register', function (req, res, next) {
     }
 
     var genId = uuid.v4();
-    nodes.addEntry({socket: {address:body.address,port:body.port}, key: body.key, lastBeat: new Date().getTime(), id:genId});
+    nodes.addNode({socket: {address:body.address,port:body.port}, key: body.key, heartbeat: new Date().getTime(), id:genId});
     res.send(200, createResponseObject('OK', genId));
     return next();
 });
@@ -85,17 +120,14 @@ server.post('/logout', function (req, res, next) {
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var body = JSON.parse(req.body),
         id = body.id,
-        socket = body.socket;
-    if(typeof(id) === "undefined" || typeof(idRegistry[id]) === "undefined")
-        res.send(400, createResponseObject('Id is missing or wrong'));
-    if(typeof(nodes[getNodeKey(socket)]) === "undefined")
-        res.send(400, createResponseObject('No such socket registered'+socket+" "+req.query+" "+req.query.length));
-    if (nodes.deleteEntry(socket)) {
-      console.log("node logged out ",socket);
-      res.send(200, createResponseObject('OK'));
-    }
+        socket = body.socket,
+        msg = nodes.removeNode(id);
+    if(msg !== "OK")
+        res.send(400, createResponseObject(msg));
     else
-        res.send(400, createResponseObject('Not registered. (Perhaps multiple logout calls)'));
+        res.send(200, createResponseObject('OK'));
+
+    console.log("node logged out ",socket);
     return next();
 });
 
@@ -109,8 +141,4 @@ function createResponseObject(message, dataObject) {
     if (typeof(dataObject) === "undefined")
         return {msg: message};
     return {msg: message, data: dataObject};
-}
-
-function getNodeKey(socket){
-    return socket.address + '' + socket.port;
 }

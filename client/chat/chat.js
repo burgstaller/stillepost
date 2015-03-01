@@ -12,6 +12,7 @@ window.stillepost.chat = (function() {
         _chatServerUrl = null,
         _users = null,
         _connections = {},
+        _heartbeatInterval = 3000,
         oi = null,
         cu = null;
 
@@ -52,6 +53,22 @@ window.stillepost.chat = (function() {
         xhr.send();
     }
 
+    function sendHeartbeat(successCallback){
+        var xhr = new XMLHttpRequest();
+        xhr.onload = function () {
+            var response = JSON.parse(this.responseText);
+            console.log("chat: sendHeartbeat SUCCESS");
+            if(typeof(successCallback) !== "undefined")
+                successCallback(response);
+        };
+        xhr.onerror = function(e) {
+            console.log("chat: sendHeartbeat FAILURE:");
+            console.log(e.target);
+        };
+        xhr.open("put", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash)+"?sessionKey="+encodeURIComponent(_sessionKey), true);
+        xhr.send();
+    }
+
     return {
         /*
             params
@@ -88,6 +105,8 @@ window.stillepost.chat = (function() {
 
             var chatObject = null;
             login(function(response){
+
+                setInterval(sendHeartbeat, _heartbeatInterval);
                 chatObject = {
                     // methods
                     updateUserList: function () {

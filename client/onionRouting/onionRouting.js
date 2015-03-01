@@ -9,6 +9,7 @@ window.stillepost.onion.onionRouting = (function() {
     clientConnection = window.stillepost.onion.clientConnection,
     chainSize = 3,
     directoryServerUrl = "http://127.0.0.1:42111",
+    _heartbeatInterval = 3000,
     _masterChainCreated = null,
     _masterChainError = null,
     _isMasterChainCreated = false,
@@ -75,6 +76,7 @@ window.stillepost.onion.onionRouting = (function() {
             if (response.msg === "OK") {
               _uuid = response.data;
               console.log("Successfully registered at directory server with uuid " + response.data);
+              setInterval(sendHeartbeat, _heartbeatInterval)
             }
           };
           xhr.onerror = function (e) {
@@ -84,7 +86,7 @@ window.stillepost.onion.onionRouting = (function() {
             else
               public.onerror('chainerror', 'Could not connect to directory server');
           };
-          xhr.open("post", directoryServerUrl + "/register", true);
+          xhr.open("post", directoryServerUrl + "/node", true);
           xhr.send(JSON.stringify(entry));
         };
         registerAtDirectory();
@@ -93,6 +95,20 @@ window.stillepost.onion.onionRouting = (function() {
     }).catch(function(err) {
       console.log("Error generating public RSA Key", err);
     });
+  },
+
+  sendHeartbeat = function(){
+      var xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+          var response = JSON.parse(this.responseText);
+          console.log("onion: sendHeartbeat SUCCESS");
+      };
+      xhr.onerror = function(e) {
+          console.log("onion: sendHeartbeat FAILURE:");
+          console.log(e.target);
+      };
+      xhr.open("put", directoryServerUrl + "/node/" + _uuid, true);
+      xhr.send();
   },
 
   /**
@@ -157,7 +173,7 @@ window.stillepost.onion.onionRouting = (function() {
         var errorMsg = e.target.statusText ? e.target.statusText : "Failed to load nodes from directory server";
         reject(errorMsg);
       };
-      xhr.open("get", directoryServerUrl + "/nodelist/" + _uuid, true);
+      xhr.open("get", directoryServerUrl + "/node/" + _uuid, true);
       xhr.send();
     });
   },
