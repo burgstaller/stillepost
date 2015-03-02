@@ -18,7 +18,7 @@ window.stillepost.onion.intermediateNode = (function() {
     console.log("Sending build command to next node: ", content.nodeSocket);
     content.chainIdIn = objToAb(content.chainIdIn);
     content.chainIdOut = objToAb(content.chainIdOut);
-    cu.hashArrayObjects([cu.uInt32Concat(content.chainIdIn, 1), cu.uInt32Concat(content.chainIdOut, 1)]).then(function(digestArray) {
+    cu.hashArrayObjects([cu.abConcat(content.chainIdIn, 1, 'decrypt'), cu.abConcat(content.chainIdOut, 1, 'encrypt')]).then(function(digestArray) {
       // add entries to chainMap - which maps a chainId to a specific chain
       // entry for master -> exitNode direction
       onion.chainMap[digestArray[0]] = {socket: content.nodeSocket, key: unwrappedKey, chainIdIn: content.chainIdIn, seqNumRead: 1,
@@ -46,7 +46,7 @@ window.stillepost.onion.intermediateNode = (function() {
       con.send(buildMessage).catch(function (err) {
         // if an error occurred while trying to send message to next node, we return an error message to the previous node
         onion.sendError("Error while sending build message to next node " +
-        content.nodeSocket.address + ":" + content.nodeSocket.port, err, webRTCConnection, content.chainIdIn, 1);
+        content.nodeSocket.address + ":" + content.nodeSocket.port, err, webRTCConnection, content.chainIdIn, 1, 'encrypt');
       });
     });
   };
@@ -91,7 +91,7 @@ window.stillepost.onion.intermediateNode = (function() {
       if (workerMessage.data.success) {
         workerMessage.data.data = JSON.parse(workerMessage.data.data);
         // Try to compute Hash for next node
-        cu.hashArrayObjects([cu.uInt32Concat(node.chainIdOut, node.seqNumWrite),
+        cu.hashArrayObjects([cu.abConcat(node.chainIdOut, node.seqNumWrite, node.type),
           JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data.chainData})]).then(function(digestArray) {
           var con = webrtc.createConnection(node.socket.address, node.socket.port),
             command = {
@@ -107,7 +107,7 @@ window.stillepost.onion.intermediateNode = (function() {
         }).catch(hashErrorCallback);
       } else {
         // Try to compute Hash for next node
-        cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
+        cu.hash(cu.abConcat(node.chainIdOut, node.seqNumWrite, node.type)).then(function(digest) {
           //in decryption case send error to previous node in chain
           return webRTCConnection.send({commandName: "error", chainId: digest, errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
         }).catch(hashErrorCallback);

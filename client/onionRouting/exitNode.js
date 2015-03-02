@@ -20,7 +20,7 @@ window.stillepost.onion.exitNode = (function() {
   public.build = function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
     console.log("Received build message as exit node ", content);
     content.chainId = objToAb(content.chainId);
-    cu.hashArrayObjects([cu.uInt32Concat(content.chainId, 1), cu.uInt32Concat(content.chainId, 1)]).then(function(digestArray) {
+    cu.hashArrayObjects([cu.abConcat(content.chainId, 1, 'decrypt'), cu.abConcat(content.chainId, 1, 'encrypt')]).then(function(digestArray) {
 
       var mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
         seqNumRead: 1, seqNumWrite: 2, type: "exit"};
@@ -47,7 +47,7 @@ window.stillepost.onion.exitNode = (function() {
     }).catch(function (err) {
       console.log("Error at exit node", err);
       onion.sendError("Error handling data on exit node " + onion.localSocket.address + ":" + onion.localSocket.port,
-        err, webRTCConnection, content.chainId, 1);
+        err, webRTCConnection, content.chainId, 1, node.type);
     });
 
   };
@@ -77,7 +77,7 @@ window.stillepost.onion.exitNode = (function() {
         if (successCallback)
           successCallback(JSON.parse(workerMessage.data.data));
       } else {
-        onion.sendError("Error while forwarding message at intermediate node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite);
+        onion.sendError("Error while forwarding message at intermediate node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
       }
     };
   }
@@ -106,7 +106,7 @@ window.stillepost.onion.exitNode = (function() {
       } else {
         var con = webrtc.createConnection(data.socket.address, data.socket.port);
         con.send({commandName: message.commandName, chainData: data.message, chainId: data.chainId}).catch(function(err) {
-          onion.sendError('Error: Could not send message to remote exit node', err, webRTCConnection, node.chainIdIn, node.seqNumWrite);
+          onion.sendError('Error: Could not send message to remote exit node', err, webRTCConnection, node.chainIdIn, node.seqNumWrite, node.type);
         });
       }
     });

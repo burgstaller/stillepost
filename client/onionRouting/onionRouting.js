@@ -77,14 +77,15 @@ window.stillepost.onion.onionRouting = (function() {
               _uuid = response.data;
               console.log("Successfully registered at directory server with uuid " + response.data);
               setInterval(sendHeartbeat, _heartbeatInterval)
-            }
+            } else
+              public.onerror('chainerror', {message: "Directory-Server did not respond with OK while registering, but with: "+response.msg})
           };
           xhr.onerror = function (e) {
             console.log("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
             if (_curDirectoryTryCount < _maxDirectoryTryCount)
               registerAtDirectory();
             else
-              public.onerror('chainerror', 'Could not connect to directory server');
+              public.onerror('chainerror', {message: 'Could not connect to directory server', error: e.target});
           };
           xhr.open("post", directoryServerUrl + "/node", true);
           xhr.send(JSON.stringify(entry));
@@ -93,7 +94,7 @@ window.stillepost.onion.onionRouting = (function() {
       });
 
     }).catch(function(err) {
-      console.log("Error generating public RSA Key", err);
+      public.onerror('chainerror', {message: 'Error generating public RSA Key', error: err});
     });
   },
 
@@ -104,8 +105,7 @@ window.stillepost.onion.onionRouting = (function() {
           console.log("onion: sendHeartbeat SUCCESS");
       };
       xhr.onerror = function(e) {
-          console.log("onion: sendHeartbeat FAILURE:");
-          console.log(e.target);
+          public.onerror('chainerror', {message: 'Directory server sendHeartbeat FAILURE', error: e.target})
       };
       xhr.open("put", directoryServerUrl + "/node/" + _uuid, true);
       xhr.send();
@@ -166,7 +166,7 @@ window.stillepost.onion.onionRouting = (function() {
             reject(e);
           }
         } else {
-          reject("Server did no responded with OK "+msg.msg);
+          reject("Directory-Server did not respond with OK while retrieving nodes, but with: "+msg.msg);
         }
       };
       xhr.onerror = function(e) {
@@ -188,7 +188,6 @@ window.stillepost.onion.onionRouting = (function() {
         if (typeof pubKey === "string")
           parsedPubKey = JSON.parse(pubKey);
         return cu.wrapAESKey(key, parsedPubKey).then(function(keyData) {
-          console.log("keyData: " + keyData);
           var iv = cu.generateNonce();
           console.log("encrypting data: "+dataToEncrypt);
           return cu.encryptAES(dataToEncrypt, key, iv, 'build').then(function(encData) {
@@ -254,7 +253,7 @@ window.stillepost.onion.onionRouting = (function() {
         }
         chainIdMaster = chainIds[0];
         // pre-compute expected chainId hash
-        return cu.hash(cu.uInt32Concat(chainIdMaster, masterSeqNumRead)).then(function(digest) {
+        return cu.hash(cu.abConcat(chainIdMaster, masterSeqNumRead, 'encrypt')).then(function(digest) {
           masterHash = digest;
 
           // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
@@ -272,7 +271,7 @@ window.stillepost.onion.onionRouting = (function() {
                 _masterChainError = reject;
                 setTimeout(function() {
                   if (!_isMasterChainCreated) {
-                    reject("Create chain Timeout");
+                    reject("Create chain Timeout reached");
                   }
                 }, 7000);
               });
@@ -313,7 +312,7 @@ window.stillepost.onion.onionRouting = (function() {
       return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
         return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv2}), masterChain[2], iv, commandName).then(function(encData) {
-          return cu.hashArrayObjects([cu.uInt32Concat(chainIdMaster, masterSeqNumWrite),
+          return cu.hashArrayObjects([cu.abConcat(chainIdMaster, masterSeqNumWrite, 'decrypt'),
             JSON.stringify({seqNum: masterSeqNumWrite++, chainId: chainIdMaster, data: encData})]).then(function(digestArray) {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
               msg = {commandName: commandName, chainData: encData, iv: iv, chainId: digestArray[0], checksum: digestArray[1]};
@@ -323,8 +322,6 @@ window.stillepost.onion.onionRouting = (function() {
           });
         })
       });
-    }, function(err) {
-      console.log("Error sending message over the chain: ",err);
     });
   },
 
@@ -341,31 +338,33 @@ window.stillepost.onion.onionRouting = (function() {
     });
   },
 
-  // Handle ack message (return message from exit node as answer to build message)
-  // Schematic representation of layered build-ack message
-  // E_aesNode1( E_aesNode2( E_aesExitNode(confirmData), IV_exitNode ), IV_node2), IV_node1
-  handleBuildResponse = function(message) {
-    return unwrapMessage(message).then(function(decData) {
-      var data = JSON.parse(decData);
-      console.log("Received message from exit node: ", data);
-      if (abEqual(objToAb(data.nonce), _masterChainNonce)) {
-        console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
-        _pubChainId = data.pubChainId;
-        _masterChainCreated();
-        _isMasterChainCreated = true;
-        if (_curCreateChainTryCount > 0)
-          public.onnotification('renew', {msg: 'Renewed chain', data: public.getPublicChainInformation()});
-        _curCreateChainTryCount = 0;
-      } else {
-        _masterChainError("Received invalid nonce from exit node");
-      }
-    }).catch(function(err) {
-      console.log("Error decrypting build command response at chainMaster: ",err);
-      _masterChainError(err);
-    });
-  },
-
   masterNodeMessageHandler = {
+
+    // Handle ack message (return message from exit node as answer to build message)
+    // Schematic representation of layered build-ack message
+    // E_aesNode1( E_aesNode2( E_aesExitNode(confirmData), IV_exitNode ), IV_node2), IV_node1
+    build: function(message) {
+      return unwrapMessage(message).then(function(decData) {
+        var data = JSON.parse(decData);
+        console.log("Received message from exit node: ", data);
+        if (abEqual(objToAb(data.nonce), _masterChainNonce)) {
+          console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
+          _pubChainId = data.pubChainId;
+          _masterChainCreated();
+          _isMasterChainCreated = true;
+          if (_curCreateChainTryCount > 0)
+            public.onnotification('renew', {msg: 'Renewed chain', data: public.getPublicChainInformation()});
+          _curCreateChainTryCount = 0;
+        } else {
+          _masterChainError("Received invalid nonce from exit node");
+        }
+      }).catch(function(err) {
+        var error = {message: 'Error decrypting build command response at chainMaster: ', error: err};
+        _masterChainError(error);
+        public.onerror('messageError', error)
+      });
+    },
+
     /**
      * Handle the received response of commandName 'message'
      * @param message
@@ -376,7 +375,7 @@ window.stillepost.onion.onionRouting = (function() {
         var jsonData = JSON.parse(decData);
         console.log("parsed decrypted data: ", jsonData);
       }).catch(function(err) {
-        console.log("error decrypting data",err);
+        public.onerror('messageError', {message: 'error decrypting data', error: err});
       });
     },
 
@@ -388,15 +387,24 @@ window.stillepost.onion.onionRouting = (function() {
       return unwrapMessage(message).then(function (decData) {
         clientConnection.processClientMessage(decData);
       }).catch(function(err) {
-        console.log("error decrypting data",err);
+        public.onerror('messageError', {message: 'error decrypting data', error: err});
       });
+    },
+
+    error: function(message, webRTCConnection) {
+      console.log("Received error commandMessage - destroying chain ",message.errorMessage);
+      _masterChainError(message.errorMessage.message);
+      resetMasterChain();
+      webRTCConnection.close();
+      public.onerror('nodeError', {message: message.errorMessage.message, error: message.errorMessage.error});
     }
   };
 
-  function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite) {
+  function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite, mode) {
     console.log(errorMessage, errorObj, connection, chainId);
     if (chainId && seqNumWrite) {
-      return cu.hash(cu.uInt32Concat(chainId, seqNumWrite)).then(function(digest) {
+      var modeString = mode === 'exit' ? 'encrypt' : mode;
+      return cu.hash(cu.abConcat(chainId, seqNumWrite, modeString || 'encrypt')).then(function(digest) {
         var errorMsg = {
           commandName: 'error',
           chainId: digest,
@@ -418,7 +426,7 @@ window.stillepost.onion.onionRouting = (function() {
   function updateMasterHash(message, webRTCConnection) {
     return new Promise(function(resolve, reject) {
       cu.hashArrayObjects([JSON.stringify({seqNum: masterSeqNumRead, chainId: chainIdMaster, data: message.chainData}),
-        cu.uInt32Concat(chainIdMaster, ++masterSeqNumRead)]).then(function(digestArray) {
+        cu.abConcat(chainIdMaster, ++masterSeqNumRead, 'encrypt')]).then(function(digestArray) {
         if (message.checksum !== digestArray[0])
           reject('Invalid checksum');
         masterHash = digestArray[1];
@@ -431,7 +439,8 @@ window.stillepost.onion.onionRouting = (function() {
 
   function encWorkerListener(workerMessage, webRTCConnection, iv, node, message) {
     // Try to compute chainID-hash for next node
-    cu.hashArrayObjects([cu.uInt32Concat(node.chainIdOut, node.seqNumWrite),
+    var mode = node.type === 'exit' ? 'encrypt' : node.type;
+    cu.hashArrayObjects([cu.abConcat(node.chainIdOut, node.seqNumWrite, mode),
       JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data})]).then(function(digestArray) {
       var con = null;
       if (workerMessage.data.success) {
@@ -488,7 +497,7 @@ window.stillepost.onion.onionRouting = (function() {
 
   function chainErrorRecovery(err, callback) {
     console.log("error creating chain: ",err);
-    public.onerror('builderror', err);
+    public.onerror('builderror', {message: 'Error while creating chain', error: err});
 
     resetMasterChain();
     if (_curCreateChainTryCount++ < _maxCreateChainTryCount) {
@@ -499,7 +508,7 @@ window.stillepost.onion.onionRouting = (function() {
           callbackFunction();
       }, this, [callbackFunction]), delay);
     } else {
-      public.onerror('chainerror','Maximum amount of chain build attempts reached');
+      public.onerror('chainerror',{message: 'Maximum amount of chain build attempts reached'});
     }
   }
 
@@ -516,11 +525,11 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.onerror = function(type, errorThrown) {
-    console.error('#####################onionlayer on error called with ',type, errorThrown);
+    console.error('onion layer on error called with ',type, errorThrown);
   };
 
   public.onnotification = function(type, notificationText) {
-    console.info('######################onionlayer onnotification called with type: ',type,notificationText);
+    console.info('onion layer onnotification called with type: ',type,notificationText);
   };
 
   public.init = function() {
@@ -534,7 +543,7 @@ window.stillepost.onion.onionRouting = (function() {
   public.peerDisconnected = function(remoteAddress, remotePort) {
     console.log("peer disconnected");
     if (_entryNodeSocket && _entryNodeSocket.address === remoteAddress && _entryNodeSocket.port === remotePort) {
-      console.log("Removing chain as master");
+      public.onerror('nodeError', {message: 'Entry node disconnected'});
       resetMasterChain();
     }
     // find all chains that use this peer and propagate error message in each chain
@@ -546,7 +555,7 @@ window.stillepost.onion.onionRouting = (function() {
             var mapEntry = chainMap[innerKey],
               con = webrtc.createConnection(mapEntry.socket.address, mapEntry.socket.port);
             console.log("Propagating peer disconnected error message to next node ",mapEntry);
-              sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite).then(function() {
+              sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite, mapEntry.type).then(function() {
                 con.close();
               }).catch(function(err) {
                 console.log('Could not propagate error message',err);
@@ -565,13 +574,12 @@ window.stillepost.onion.onionRouting = (function() {
       message = {socket: _localSocket, id: _uuid};
     xhr.onload = function () {
       var response = JSON.parse(this.responseText);
-      console.log("Directory server responded logout request with: ", response);
       if (response.msg === "OK") {
         console.log("Successfully logged out from directory server");
       }
     };
     xhr.onerror = function(e) {
-      console.error("Failed to logout from directory server ", e.target);
+      public.onerror({message: "Failed to logout from directory server ", error: e.target});
     };
     xhr.open("post", directoryServerUrl + "/logout", true);
     xhr.send(JSON.stringify(message));
@@ -589,13 +597,9 @@ window.stillepost.onion.onionRouting = (function() {
 
   public.updateMasterHash = updateMasterHash;
 
-  public.getMasterHash = function() {return masterHash;};
-
-  public.resetMasterChain = resetMasterChain;
-
-  public.chainError = function (err) {_masterChainError(err);};
-
-  public.handleBuildResponse = handleBuildResponse;
+  public.isMasterNode = function(chainIdHash) {
+    return chainIdHash && masterHash && masterHash === chainIdHash;
+  };
 
   //interface function to generically send a new message over the master chain
   public.sendMessage = function(messageType, message) {

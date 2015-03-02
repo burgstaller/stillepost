@@ -77,7 +77,7 @@ window.stillepost.onion.clientConnection = (function() {
       // event callback, which is called upon receiving the answer from the other client. It is expected that this callback is overwritten
       // by the caller of the createClientConnection function
     clientConnection.processMessage = function (messageObj) {
-      cu.decryptAES(messageObj.data, clientConnection.aesKey, objToAb(messageObj.iv)).then(function (decData) {
+      cu.decryptAES(messageObj.data, clientConnection.aesKey, objToAb(messageObj.iv), messageObj.connectionData).then(function (decData) {
         var jsonData = JSON.parse(decData);
 
         // if connection already initialized - trigger onmessage
@@ -116,7 +116,7 @@ window.stillepost.onion.clientConnection = (function() {
       onmessage: function (message) { console.log('onmessage: ', message); },
       onclose: function() { console.log('connection onclose triggered')},
       processMessage: function (messageObj) {
-        cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv)).then(function(decData) {
+        cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv), messageObj.connectionData).then(function(decData) {
           var jsonData = JSON.parse(decData);
           if (handleConnectionStateUpdate(connection, jsonData).connectionState === connectionState.ready) {
             connection.onmessage(jsonData);
@@ -197,8 +197,8 @@ window.stillepost.onion.clientConnection = (function() {
   function sendClientMessage(messageContent, connection) {
     if (connection.connectionState === connectionState.ready) {
       var iv = cu.generateNonce();
-      return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv).then(function (encData) {
-        return cu.encryptRSA(JSON.stringify({connectionId: connection.connectionId, seqNum: connection.seqNum++}), connection.publicKey).then(function (encConnectionData) {
+      return cu.encryptRSA(JSON.stringify({connectionId: connection.connectionId, seqNum: connection.seqNum++}), connection.publicKey).then(function (encConnectionData) {
+        return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv, encConnectionData).then(function (encData) {
           var msg = {message: {data: encData, connectionData: encConnectionData, iv: iv}, chainId: connection.chainId, socket: connection.socket};
           return onion.sendMessage('clientMessage', msg);
         });

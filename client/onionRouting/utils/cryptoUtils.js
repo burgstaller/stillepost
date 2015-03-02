@@ -25,24 +25,30 @@ window.stillepost.cryptoUtils = (function() {
 		return num;
 	};
 
-	public.uInt32Concat = function(first, second)
-	{
-    var a = (typeof first === 'number') ? new Uint32Array([first]) : first,
-      b = (typeof second === 'number') ? new Uint32Array([second]) : second;
-		if(!a)
-			return new Uint32Array(b);
-		if(!b)
-			return new Uint32Array(a);
-		var first = new Uint32Array(a),
-			second = new Uint32Array(b),
-			firstLength = first.length,
-			result = new Uint32Array(firstLength + second.length);
+  /**
+   * Concatenate an arbitrary amount of given integers or arraybuffers to a Uint8Array object.
+   * Arguments are retrieved via the JavaScript argument array.
+   * @returns Uint8Array .. the concatenated arraybuffer
+   */
+  public.abConcat = function()
+  {
+    if (arguments.length < 1)
+      return null;
 
-		result.set(first);
-		result.set(second, firstLength);
+    var i = 1,
+      result = convertToAb(arguments[0]);
 
-		return result;
-	};
+    for (; i < arguments.length; i++) {
+      var b = convertToAb(arguments[i]),
+        temp = new Uint8Array(result.length + b.length);
+
+      temp.set(result);
+      temp.set(b, result.length);
+      result = temp;
+    }
+
+    return result;
+  };
 
 	/**
 	 * Locally generates a RSA-OAEP key pair of 4096 modulus length.
@@ -207,6 +213,8 @@ window.stillepost.cryptoUtils = (function() {
       return new Uint8Array(str2ab(data));
     else if (typeof data === 'object')
       return new Uint8Array(str2ab(JSON.stringify(data)));
+    else if (typeof data === 'number')
+      return new Uint8Array([data]);
     else
       return data;
   }

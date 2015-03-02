@@ -36,7 +36,7 @@ window.stillepost.onion.messageHandler = (function() {
       updateChainMap(message, webRTCConnection).then(function(result) {
         if (!result.node) {
           // we received ack message as master of the chain - validate content
-          onion.handleBuildResponse(result.message);
+          onion.masterNodeMessageHandler.build(result.message);
         } else {
           // intermediate node logic: Encrypt and forward build message response.
           intermediateNode.wrapMessage(result.message, result.node, result.webRTCConnection);
@@ -48,24 +48,20 @@ window.stillepost.onion.messageHandler = (function() {
   };
 
   public.error = function(message, remoteAddress, remotePort, webRTCConnection) {
-    if (message.chainId && message.chainId == onion.getMasterHash()) {
-      console.log(message.errorMessage.message);
-      console.log("Received error commandMessage - destroying chain ",message.errorMessage.error);
-      onion.chainError(message.errorMessage.message);
-      onion.resetMasterChain();
-      webRTCConnection.close();
+    if (onion.isMasterNode(message.chainId)) {
+      onion.masterNodeMessageHandler.error(message, webRTCConnection);
     } else {
       // we are not an endpoint node and need to forward the error message
       var node = onion.chainMap[message.chainId];
       if (node && node.socket.address) {
-        cu.hash(cu.uInt32Concat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
+        cu.hash(cu.abConcat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
           var con = webrtc.createConnection(node.socket.address, node.socket.port);
           return con.send({commandName: "error", chainId: digest, errorMessage: message.errorMessage}).then(function() {
             webRTCConnection.close();
           });
         });
       } else {
-        console.log("Received error commandMessage from " + remoteAddress + ":" + remotePort , message.errorMessage.message);
+        console.log("Received error commandMessage without valid chainId from " + remoteAddress + ":" + remotePort , message.errorMessage.message);
       }
     }
   };
@@ -165,14 +161,15 @@ window.stillepost.onion.messageHandler = (function() {
   };
 
   function updateChainMap(message, webRTCConnection) {
-    if (message.chainId === onion.getMasterHash()) {
+    if (onion.isMasterNode(message.chainId)) {
       return onion.updateMasterHash(message, webRTCConnection);
     }
     return new Promise(function(resolve, reject) {
       var node = onion.chainMap[message.chainId];
       if (node) {
+        var mode = node.type === 'exit' ? 'decrypt' : node.type;
         cu.hashArrayObjects([JSON.stringify({seqNum: node.seqNumRead, chainId: node.chainIdIn, data: message.chainData}),
-          cu.uInt32Concat(node.chainIdIn, ++node.seqNumRead)]).then(function (digestArray) {
+          cu.abConcat(node.chainIdIn, ++node.seqNumRead, mode)]).then(function (digestArray) {
           if (digestArray[0] !== message.checksum)
             reject({errorMessage: 'Invalid checksum', webRTCConnection: webRTCConnection});
           onion.chainMap[digestArray[1]] = node;
