@@ -191,6 +191,7 @@ window.stillepost.onion.clientConnection = (function() {
     connection.send({connectionState: connectionState.closed}).then(function() {
       connection.connectionState = connectionState.closed;
       delete clientConnections[ab2str32(connection.connectionId)];
+      connection.onclose();
     });
   }
 

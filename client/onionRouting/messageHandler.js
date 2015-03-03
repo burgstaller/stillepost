@@ -70,6 +70,14 @@ window.stillepost.onion.messageHandler = (function() {
     queue.add(wrapFunction(updateChainMap, this, [message, webRTCConnection]));
   };
 
+  // TODO: finish this
+  //public.close = function(message, remoteAddress, remotePort, webRTCConnection) {
+  //  var handleClose = function() {
+  //
+  //  };
+  //  queue.add(wrapFunction(handleClose, this,))
+  //};
+
   function messageCallback(message) {
     if (message.node) {
       if (message.node.type === "decrypt") {
@@ -125,10 +133,14 @@ window.stillepost.onion.messageHandler = (function() {
    * @param webRTCConnection the WebRTC connection object to the origin of the message
    */
   public.handleMessage = function(message, remoteAddress, remotePort, webRTCConnection) {
-    var fn = window.stillepost.onion.messageHandler[message.commandName];
-    if (typeof fn === 'function') {
-      console.log("Handle message: ",message);
-      fn(message, remoteAddress, remotePort, webRTCConnection);
+    if (message && message.commandName) {
+      var fn = window.stillepost.onion.messageHandler[message.commandName];
+      if (typeof fn === 'function') {
+        console.log("Handle message: ", message);
+        fn(message, remoteAddress, remotePort, webRTCConnection);
+      } else {
+        window.stillepost.onion.messageHandler.message(message, remoteAddress, remotePort, webRTCConnection);
+      }
     }
   };
 

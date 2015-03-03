@@ -23,6 +23,8 @@ window.stillepost.onion.onionRouting = (function() {
     _curCreateChainTryCount = 0,
     // maximum amount of tries to create a chain
     _maxCreateChainTryCount = 15,
+    _aajaxTimeout = 15000,
+    _createChainTimeout = 10000,
     _localSocket = {},
 
   //Id of the chain in which this node is the master
@@ -47,6 +49,21 @@ window.stillepost.onion.onionRouting = (function() {
   _entryNodeSocket = null,
   _exitNodeSocket = null,
   _pubChainId = null,
+
+  aajaxMap = {
+    curId: 0,
+    map: {},
+    pop: function(id) {
+      var obj = this.map[id];
+      delete this.map[id];
+      return obj;
+    },
+    put: function(data) {
+      var id = this.curId++;
+      this.map[id] = data;
+      return id;
+    }
+  },
 
   /**
    *  Generate RSA keypair and send public key to directory server.
@@ -273,7 +290,7 @@ window.stillepost.onion.onionRouting = (function() {
                   if (!_isMasterChainCreated) {
                     reject("Create chain Timeout reached");
                   }
-                }, 7000);
+                }, _createChainTimeout);
               });
             con.send(command).catch(function(err) {
               _masterChainError(err);
@@ -397,6 +414,26 @@ window.stillepost.onion.onionRouting = (function() {
       resetMasterChain();
       webRTCConnection.close();
       public.onerror('nodeError', {message: message.errorMessage.message, error: message.errorMessage.error});
+    },
+
+    aajax: function(message) {
+      return unwrapMessage(message).then(function (decData) {
+        console.log("decrypted data: ", decData);
+        var jsonData = JSON.parse(decData),
+          aajaxObject = aajaxMap.pop(jsonData.id);
+        console.log("parsed decrypted data: ", jsonData);
+        if (aajaxObject) {
+          if (jsonData.success) {
+            aajaxObject.success(jsonData.data, jsonData.textStatus, null);
+          } else if (aajaxObject.error) {
+              aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown)
+          }
+        } else {
+          public.onerror('messsageError', {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
+        }
+      }).catch(function(err) {
+        public.onerror('messageError', {message: 'error decrypting data', error: err});
+      });
     }
   };
 
@@ -568,6 +605,13 @@ window.stillepost.onion.onionRouting = (function() {
     }
   };
 
+  public.closeChain = function() {
+    if (_isMasterChainCreated) {
+      resetMasterChain();
+      sendMessage('close','close chain');
+    }
+  };
+
   public.cleanUp = function() {
     resetMasterChain();
     var xhr = new XMLHttpRequest(),
@@ -583,6 +627,45 @@ window.stillepost.onion.onionRouting = (function() {
     };
     xhr.open("post", directoryServerUrl + "/logout", true);
     xhr.send(JSON.stringify(message));
+  };
+
+  public.aajax = function(request) {
+    if (request.success) {
+      var requestObject = {};
+
+      requestObject.accepts = request.accepts;
+      requestObject.contents = request.contents;
+      requestObject.contentType = request.contentType;
+      requestObject.converters = request.converters;
+      requestObject.data = request.data;
+      requestObject.dataType = request.dataType;
+      requestObject.headers = request.headers;
+      requestObject.mimeType = request.mimeType;
+      requestObject.scriptCharset = request.scriptCharset;
+      requestObject.type = request.type;
+      requestObject.url = request.url;
+
+      Object.keys(requestObject).forEach(function(item) {
+        if(!requestObject[item]) {
+          delete requestObject[item];
+        }
+      });
+
+      // todo request.timeout?
+
+
+      var id = aajaxMap.put({success: request.success, error: request.error});
+      requestObject.id = id;
+
+      sendMessage('aajax', requestObject);
+
+      setTimeout(function() {
+        var obj = aajaxMap.pop(id);
+        if (obj && obj.error) {
+          obj.error(null, 'timeout', 'Request timed out.');
+        }
+      }, _aajaxTimeout);
+    }
   };
 
   public.chainMap = chainMap;

@@ -112,6 +112,36 @@ window.stillepost.onion.exitNode = (function() {
     });
   };
 
+  public.aajax = function(message, node, webRTCConnection) {
+    processMessage(message, node, webRTCConnection, function (decryptedRequest) {
+
+      decryptedRequest.success = function(data, textStatus, jqXHR) {
+        console.log('ajax success called with status '+textStatus, data);
+        var encryptionIV = cu.generateNonce(),
+          encWorker = new Worker('onionRouting/encryptionWorker.js');
+
+        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, data: data, textStatus: textStatus, success:true}), additionalData: message.commandName});
+        encWorker.onmessage = function(workerMessage) {
+          onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
+        };
+      };
+
+      decryptedRequest.error = function(jqXHR, textStatus, errorThrown) {
+        console.log('ajax error called with status '+textStatus, errorThrown);
+        var encryptionIV = cu.generateNonce(),
+          encWorker = new Worker('onionRouting/encryptionWorker.js');
+
+        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, errorThrown: errorThrown, textStatus: textStatus,
+          success:false}), additionalData: message.commandName});
+        encWorker.onmessage = function(workerMessage) {
+          onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
+        };
+      };
+
+      $.ajax(decryptedRequest);
+    });
+  };
+
   public.exitNodeMap = exitNodeMap;
 
   return public;

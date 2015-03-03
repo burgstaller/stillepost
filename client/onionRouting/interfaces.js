@@ -87,8 +87,8 @@ window.stillepost.onion.interfaces = (function() {
     onnotification: onion.onnotification
   };
 
-  public.aajax = function() {
-    // todo
+  public.aajax = function(request) {
+    onion.aajax(request);
   };
 
   public.aFileDown = function() {
@@ -99,6 +99,19 @@ window.stillepost.onion.interfaces = (function() {
     // todo
   };
 
+  /**
+   * Close the chain of this node. Notifies each node in the chain that the chain is closed.
+   * Consequently, each node deletes information of this chain and closes unnessecary webrtc connections.
+   * If no chain was created prior to this call no action is performed.
+   */
+  public.closeChain = function() {
+    onion.closeChain();
+  };
+
+  /**
+   * Closes this nodes' chain, if previously established. Additionally logs out from the directory server.
+   * Consequently, this node is no longer part of the onion network.
+   */
   public.cleanUp = function() {
     onion.cleanUp();
   };
