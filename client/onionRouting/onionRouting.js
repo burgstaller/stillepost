@@ -636,14 +636,16 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.closeChain = function() {
+    console.log('Onion layer close chain called - reseting chain information and sending close message');
     if (_isMasterChainCreated) {
-      resetMasterChain();
-      sendMessage('close','close chain');
+      return sendMessage('close',_pubChainId).then(function() {
+        resetMasterChain();
+      });
     }
   };
 
   public.cleanUp = function() {
-    resetMasterChain();
+    public.closeChain();
     var xhr = new XMLHttpRequest(),
       message = {socket: _localSocket, id: _uuid};
     xhr.onload = function () {

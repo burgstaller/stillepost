@@ -78,16 +78,26 @@ window.stillepost.onion.messageHandler = (function() {
     queue.add(wrapFunction(updateChainMap, this, [message, webRTCConnection]));
   };
 
-  // TODO: finish this
-  //public.close = function(message, remoteAddress, remotePort, webRTCConnection) {
-  //  var handleClose = function() {
-  //
-  //  };
-  //  queue.add(wrapFunction(handleClose, this,))
-  //};
+  public.close = function(message, remoteAddress, remotePort, webRTCConnection) {
+    var handleClose = function(message) {
+      return new Promise(function(resolve, reject) {
+        var node = onion.chainMap[message.chainId];
+        if (node && node.type === 'decrypt') {
+          intermediateNode.close(message, node);
+        } else if (node && node.type === 'exit') {
+          exitNode.close(message, node);
+        } else if (node && node.type === 'encrypt') {
+          intermediateNode.wrapMessage(message, node, null);
+        }
+        delete onion.chainMap[message.chainId];
+        resolve(message);
+      });
+    };
+    queue.add(wrapFunction(handleClose, this, [message]))
+  };
 
   function messageCallback(message) {
-    if (message.node) {
+    if (message && message.node) {
       if (message.node.type === "decrypt") {
         var fn = (typeof intermediateNode[message.message.commandName] === 'function') ?
           intermediateNode[message.message.commandName] : intermediateNode.message;
@@ -99,7 +109,7 @@ window.stillepost.onion.messageHandler = (function() {
       }
     } else if(message.master) {
       onion.masterNodeMessageHandler[message.message.commandName](message.message);
-    } else {
+    } else if (!(message.commandName === 'close')) {
       onion.sendError("Received invalid chainId", null, message.webRTCConnection);
     }
   }

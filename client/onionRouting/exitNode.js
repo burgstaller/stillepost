@@ -80,7 +80,7 @@ window.stillepost.onion.exitNode = (function() {
         if (successCallback)
           successCallback(JSON.parse(workerMessage.data.data));
       } else {
-        onion.sendError("Error while forwarding message at intermediate node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
+        onion.sendError("Error while decrypting message at exit node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
       }
     };
   }
@@ -115,6 +115,29 @@ window.stillepost.onion.exitNode = (function() {
         });
       }
     });
+  };
+
+  public.close = function(message, node) {
+    var iv = objToAb(message.iv),
+      decWorker = new Worker('onionRouting/decryptionWorker.js');
+
+    decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
+
+    decWorker.onmessage = function(workerMessage) {
+      if (workerMessage.data.success) {
+        var pubChainId = JSON.parse(workerMessage.data.data),
+          encryptionIV = cu.generateNonce(),
+          encWorker = new Worker('onionRouting/encryptionWorker.js');
+
+        console.log('Close chain at exit node - deleting entry with pubId '+pubChainId);
+        delete exitNodeMap[pubChainId];
+
+        encWorker.postMessage({iv:encryptionIV, key: node.key, data: 'closeAck', additionalData: message.commandName});
+        encWorker.onmessage = function(workerMessage) {
+          onion.encWorkerListener(workerMessage, null, encryptionIV, node, message);
+        };
+      }
+    };
   };
 
   public.aajax = function(message, node, webRTCConnection) {

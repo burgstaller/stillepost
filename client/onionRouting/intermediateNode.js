@@ -116,5 +116,36 @@ window.stillepost.onion.intermediateNode = (function() {
     };
   };
 
+  public.close = function(message, node) {
+    var iv = objToAb(message.iv),
+      decWorker = new Worker('onionRouting/decryptionWorker.js');
+    decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
+
+    decWorker.onmessage = function(workerMessage) {
+      if (workerMessage.data.success) {
+        workerMessage.data.data = JSON.parse(workerMessage.data.data);
+        cu.hashArrayObjects([cu.abConcat(node.chainIdOut, node.seqNumWrite, node.type),
+          JSON.stringify({
+            seqNum: node.seqNumWrite++,
+            chainId: node.chainIdOut,
+            data: workerMessage.data.data.chainData
+          })]).then(function (digestArray) {
+          var con = webrtc.createConnection(node.socket.address, node.socket.port),
+            command = {
+              commandName: message.commandName,
+              chainId: digestArray[0],
+              iv: workerMessage.data.data.iv,
+              chainData: workerMessage.data.data.chainData,
+              checksum: digestArray[1]
+            };
+          console.log('Forwarding close message to next node in exit node direction');
+          con.send(command).catch(function (err) {
+            console.log('Error while sending close message to next node');
+          });
+        });
+      }
+    };
+  };
+
   return public;
 })();
