@@ -28,6 +28,9 @@ window.stillepost.onion.exitNode = (function() {
       // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
       onion.chainMap[digestArray[0]] = mapEntry;
 
+      if (content.data.pubChainId)
+        delete exitNodeMap[content.data.pubChainId];
+
       var pubChainId = cu.generateRandomInt32();
       while (exitNodeMap[pubChainId]) {
         pubChainId = cu.generateRandomInt32();
@@ -47,7 +50,7 @@ window.stillepost.onion.exitNode = (function() {
     }).catch(function (err) {
       console.log("Error at exit node", err);
       onion.sendError("Error handling data on exit node " + onion.localSocket.address + ":" + onion.localSocket.port,
-        err, webRTCConnection, content.chainId, 1, node.type);
+        err, webRTCConnection, content.chainId, 1, 'encrypt');
     });
 
   };
@@ -101,12 +104,14 @@ window.stillepost.onion.exitNode = (function() {
         var pubEntry = exitNodeMap[data.chainId];
         if (pubEntry) {
           console.log('clientMessage: Found exitNodeMap entry', pubEntry);
-          public.forwardClientMessage(message, pubEntry, webRTCConnection);
+          public.forwardClientMessage({commandName: message.commandName, chainData: data.message, chainId: data.chainId}, pubEntry, webRTCConnection);
         }
       } else {
+        console.log('Sending clientMessage to remote exit Node');
         var con = webrtc.createConnection(data.socket.address, data.socket.port);
         con.send({commandName: message.commandName, chainData: data.message, chainId: data.chainId}).catch(function(err) {
-          onion.sendError('Error: Could not send message to remote exit node', err, webRTCConnection, node.chainIdIn, node.seqNumWrite, node.type);
+          console.log('Could not connect to remote exit node');
+          console.log(err)
         });
       }
     });

@@ -117,10 +117,11 @@ window.stillepost.chat = (function() {
                     },
                     sendMessage: function(user, message){
                         if(typeof(_connections[user.hash]) === "undefined"){
-                            _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key);
+                            _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key, true);
                             _connections[user.hash].onmessage = function(msg){chatObject.onReceiveMessage(msg, user);};
                         }
-                        _connections[user.hash].send(message);
+                        _connections[user.hash].send(message, function() {console.log('successcallback called');},
+                          function() {console.error('errorcallback called');});
                     },
 
                     // events

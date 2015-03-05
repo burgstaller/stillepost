@@ -55,12 +55,20 @@ window.stillepost.onion.messageHandler = (function() {
       var node = onion.chainMap[message.chainId];
       if (node && node.socket.address) {
         cu.hash(cu.abConcat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
+          console.log('Forwarding error message to next node '+remoteAddress+":"+remotePort);
           var con = webrtc.createConnection(node.socket.address, node.socket.port);
           return con.send({commandName: "error", chainId: digest, errorMessage: message.errorMessage}).then(function() {
-            webRTCConnection.close();
+            onion.closeSingleWebRTCConnection(webRTCConnection);
+            delete onion.chainMap[message.chainId];
           });
+        }).catch(function(err) {
+          console.log('Error forwarding error: ',err);
         });
+      } else if (node) {
+        console.log('Exit node deleting chainMap entry');
+        delete onion.chainMap[message.chainId];
       } else {
+        onion.closeSingleWebRTCConnection(webRTCConnection);
         console.log("Received error commandMessage without valid chainId from " + remoteAddress + ":" + remotePort , message.errorMessage.message);
       }
     }

@@ -85,7 +85,7 @@ window.stillepost.onion.intermediateNode = (function() {
       var hashErrorCallback = function (error){
         //error callback for hash operation
         console.log('error in decWorkerListener: ', error);
-        webRTCConnection.close();
+        onion.closeSingleWebRTCConnection(webRTCConnection);
       };
 
       if (workerMessage.data.success) {
@@ -101,6 +101,7 @@ window.stillepost.onion.intermediateNode = (function() {
               chainData: workerMessage.data.data.chainData,
               checksum: digestArray[1]
             };
+          console.log('Forwarding message to next node in exit node direction');
           con.send(command).catch(function (err) {
             return webRTCConnection.send({commandName: "error", chainId: digestArray[0], errorMessage: {message: "Error while sending message to next node", error: err}});
           });

@@ -209,6 +209,10 @@ window.stillepost.webrtc = (function() {
     }
   };
 
+  WebRTCConnection.prototype.getRemoteSocket = function() {
+    return {address: this._remotePeer, port: this._remotePort};
+  };
+
   function removeConnection(connectionId) {
     var tmp;
     for (var i = 0; i < connections.length; i++) {

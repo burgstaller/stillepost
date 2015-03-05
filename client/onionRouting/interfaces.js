@@ -70,8 +70,8 @@ window.stillepost.onion.interfaces = (function() {
    * @param pubKey the public key of the other client
    * @returns object .. the connection object
    */
-  public.createClientConnection = function(address, port, chainId, pubKey) {
-    return clientConnection.createClientConnection(address, port, chainId, pubKey);
+  public.createClientConnection = function(address, port, chainId, pubKey, isOrderedAndReliable) {
+    return clientConnection.createClientConnection(address, port, chainId, pubKey, isOrderedAndReliable);
   };
 
   /**

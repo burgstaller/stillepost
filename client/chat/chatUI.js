@@ -54,6 +54,7 @@ window.stillepost.chatUI = (function(){
         for(var user in users){
             id++;
             _usermap[id] = users[user];
+            _usermap[id].hash = user;
             $('#chatMembers').append('<li id="'+id+'">'+_usermap[id].username+'</li>');
 
         }

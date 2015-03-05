@@ -275,7 +275,8 @@ window.stillepost.onion.onionRouting = (function() {
 
           // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
           _masterChainNonce = cu.generateNonce();
-          var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce};
+          var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce,
+            pubChainId: _pubChainId};
           return createBuildMessage(keys, nodes, dataExitNode, chainIds).then(function(data) {
             _entryNodeSocket = nodes[chainSize-1].socket;
             _exitNodeSocket = nodes[0].socket;
@@ -369,8 +370,10 @@ window.stillepost.onion.onionRouting = (function() {
           _pubChainId = data.pubChainId;
           _masterChainCreated();
           _isMasterChainCreated = true;
-          if (_curCreateChainTryCount > 0)
+          if (_curCreateChainTryCount > 0) {
             public.onnotification('renew', {msg: 'Renewed chain', data: public.getPublicChainInformation()});
+            clientConnection.onRenewChain(public.getPublicChainInformation());
+          }
           _curCreateChainTryCount = 0;
         } else {
           _masterChainError("Received invalid nonce from exit node");
@@ -411,9 +414,13 @@ window.stillepost.onion.onionRouting = (function() {
     error: function(message, webRTCConnection) {
       console.log("Received error commandMessage - destroying chain ",message.errorMessage);
       _masterChainError(message.errorMessage.message);
-      resetMasterChain();
-      webRTCConnection.close();
-      public.onerror('nodeError', {message: message.errorMessage.message, error: message.errorMessage.error});
+      if (_isMasterChainCreated) {
+        _curCreateChainTryCount = 1;
+        closeSingleWebRTCConnection(webRTCConnection);
+        resetMasterChain();
+        public.onerror('nodeError', {message: message.errorMessage.message, error: message.errorMessage.error});
+        public.createChain();
+      }
     },
 
     aajax: function(message) {
@@ -453,10 +460,10 @@ window.stillepost.onion.onionRouting = (function() {
         return connection.send(errorMsg);
       }).catch(function(err) {
         console.log('Caught error in sendError',err);
-        connection.close();
+        closeSingleWebRTCConnection(connection);
       });
-    } else if (connection) {
-      connection.close();
+    } else {
+      closeSingleWebRTCConnection(connection);
     }
   }
 
@@ -493,7 +500,7 @@ window.stillepost.onion.onionRouting = (function() {
     }).catch(function (error){
       //error callback for hash operation
       console.log('Error in encWorkerListener: ', error);
-      webRTCConnection.close();
+      closeSingleWebRTCConnection(webRTCConnection);
     });
   }
 
@@ -577,24 +584,47 @@ window.stillepost.onion.onionRouting = (function() {
     clientConnection = window.stillepost.onion.clientConnection;
   };
 
+  public.getNodeConnectionCount = function(remoteAddress, remotePort) {
+    var count = 0;
+    if (_entryNodeSocket && remoteAddress === _entryNodeSocket.socket && remotePort === _entryNodeSocket.port)
+      count++;
+    for (var key in chainMap) {
+      if (chainMap.hasOwnProperty(key) && chainMap[key].socket.address === remoteAddress &&
+        chainMap[key].socket.port === remotePort) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  function closeSingleWebRTCConnection(connection) {
+    if (connection && public.getNodeConnectionCount(connection.getRemoteSocket().address, connection.getRemoteSocket().port) <= 1) {
+      connection.close();
+    }
+  }
+
+  public.closeSingleWebRTCConnection = closeSingleWebRTCConnection;
+
   public.peerDisconnected = function(remoteAddress, remotePort) {
     console.log("peer disconnected");
     if (_entryNodeSocket && _entryNodeSocket.address === remoteAddress && _entryNodeSocket.port === remotePort) {
-      public.onerror('nodeError', {message: 'Entry node disconnected'});
-      resetMasterChain();
+      if (_isMasterChainCreated) {
+        public.onerror('nodeError', {message: 'Entry node disconnected'});
+        _curCreateChainTryCount = 1;
+        resetMasterChain();
+        public.createChain();
+      }
     }
     // find all chains that use this peer and propagate error message in each chain
     for (var key in chainMap) {
       if (chainMap.hasOwnProperty(key) && chainMap[key].socket.address === remoteAddress &&
           chainMap[key].socket.port === remotePort) {
         for (var innerKey in chainMap) {
-          if (chainMap.hasOwnProperty(innerKey) && chainMap[innerKey].chainIdIn == chainMap[key].chainIdOut) {
+          if (chainMap.hasOwnProperty(innerKey) && chainMap[key] && chainMap[innerKey].chainIdIn == chainMap[key].chainIdOut) {
             var mapEntry = chainMap[innerKey],
               con = webrtc.createConnection(mapEntry.socket.address, mapEntry.socket.port);
             console.log("Propagating peer disconnected error message to next node ",mapEntry);
-              sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite, mapEntry.type).then(function() {
-                con.close();
-              }).catch(function(err) {
+              sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite, mapEntry.type).catch(function(err) {
                 console.log('Could not propagate error message',err);
               });
             delete chainMap[innerKey];
@@ -626,7 +656,7 @@ window.stillepost.onion.onionRouting = (function() {
       public.onerror({message: "Failed to logout from directory server ", error: e.target});
     };
     xhr.open("post", directoryServerUrl + "/logout", true);
-    xhr.send(JSON.stringify(message));
+    xhr.send(JSON.stringify(message));test
   };
 
   public.aajax = function(request) {
@@ -650,9 +680,6 @@ window.stillepost.onion.onionRouting = (function() {
           delete requestObject[item];
         }
       });
-
-      // todo request.timeout?
-
 
       var id = aajaxMap.put({success: request.success, error: request.error});
       requestObject.id = id;
