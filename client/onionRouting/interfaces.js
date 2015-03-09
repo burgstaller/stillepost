@@ -91,8 +91,23 @@ window.stillepost.onion.interfaces = (function() {
     onion.aajax(request);
   };
 
-  public.aFileDown = function() {
-    // todo
+  public.aFileDown = function(url) {
+    return new Promise(function(resolv,reject){
+    var request = {};
+    request.url = url;
+    request.dataType = 'text';
+    request.success = function(data){
+      var uInt8Array = new Uint8Array(str2ab(data));
+      var blob = new Blob([uInt8Array], {type: 'application/octet-binary'});
+      resolv(URL.createObjectURL(blob));
+    };
+
+    request.error = function(status){
+      reject(status);
+    };
+
+    onion.aajax(request);
+    });
   };
 
   public.aFileUp = function() {

@@ -426,7 +426,7 @@ window.stillepost.onion.onionRouting = (function() {
     aajax: function(message) {
       return unwrapMessage(message).then(function (decData) {
         console.log("decrypted data: ", decData);
-        var jsonData = JSON.parse(decData),
+        var jsonData = JSON.parse(window.atob(decData)),
           aajaxObject = aajaxMap.pop(jsonData.id);
         console.log("parsed decrypted data: ", jsonData);
         if (aajaxObject) {
