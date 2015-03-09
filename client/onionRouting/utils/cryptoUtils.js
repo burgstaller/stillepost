@@ -14,7 +14,7 @@ window.stillepost.cryptoUtils = (function() {
 	 * @returns Promise which evaluates to a 128 bit nonce of type Uint8Array(16)
 	 */
 	public.generateNonce = function() {
-		return crypto.getRandomValues(new Uint32Array(4));
+		return crypto.getRandomValues(new Uint8Array(16));
 	};
 
   public.generateRandomBytes = function(length) {
@@ -128,7 +128,7 @@ window.stillepost.cryptoUtils = (function() {
 	};
 
 	public.decryptAES = function(encData, key, iv, additionalData) {
-    var alg = {name: "AES-GCM", iv: iv};
+    var alg = {name: "AES-GCM", iv: new Uint8Array(iv)};
     if (additionalData)
       alg.additionalData = convertToAb(additionalData);
 		var buffer = str2ab(encData);

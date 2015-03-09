@@ -426,7 +426,7 @@ window.stillepost.onion.onionRouting = (function() {
     aajax: function(message) {
       return unwrapMessage(message).then(function (decData) {
         console.log("decrypted data: ", decData);
-        var jsonData = JSON.parse(window.atob(decData)),
+        var jsonData = JSON.parse(decData),
           aajaxObject = aajaxMap.pop(jsonData.id);
         console.log("parsed decrypted data: ", jsonData);
         if (aajaxObject) {
@@ -658,7 +658,7 @@ window.stillepost.onion.onionRouting = (function() {
       public.onerror({message: "Failed to logout from directory server ", error: e.target});
     };
     xhr.open("post", directoryServerUrl + "/logout", true);
-    xhr.send(JSON.stringify(message));test
+    xhr.send(JSON.stringify(message));
   };
 
   public.aajax = function(request) {
@@ -673,6 +673,8 @@ window.stillepost.onion.onionRouting = (function() {
       requestObject.dataType = request.dataType;
       requestObject.headers = request.headers;
       requestObject.mimeType = request.mimeType;
+      requestObject.processData = request.processData;
+      requestObject.responseType = request.responseType;
       requestObject.scriptCharset = request.scriptCharset;
       requestObject.type = request.type;
       requestObject.url = request.url;

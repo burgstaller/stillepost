@@ -41,7 +41,7 @@ window.stillepost.onion.clientConnection = (function() {
           var iv = cu.generateNonce(),
             pubInfo = onion.getPublicChainInformation(),
             dataToEncrypt = {
-              connectionId: connectionId,
+              connectionId: ab2str(connectionId),
               chainId: pubInfo.chainId,
               socket: pubInfo.socket,
               publicKey: _clientConPublicKey,
@@ -49,7 +49,7 @@ window.stillepost.onion.clientConnection = (function() {
             };
           return cu.encryptAES(JSON.stringify(dataToEncrypt), key, iv).then(function (encData) {
             var initMessage = {
-              message: {data: encData, keyData: wrappedKey, iv: iv},
+              message: {data: encData, keyData: wrappedKey, iv: ab2str(iv)},
               chainId: chainId,
               socket: {address: address, port: port}
             };
@@ -84,18 +84,21 @@ window.stillepost.onion.clientConnection = (function() {
     // event callback, which is called upon receiving the answer from the other client. It is expected that this callback is overwritten
     // by the caller of the createClientConnection function
     clientConnection.processMessage = function (messageObj, seqNum) {
-      cu.decryptAES(messageObj.data, clientConnection.aesKey, objToAb(messageObj.iv), messageObj.connectionData).then(function (decData) {
+      cu.decryptAES(messageObj.data, clientConnection.aesKey, str2ab(messageObj.iv), messageObj.connectionData).then(function (decData) {
         var jsonData = JSON.parse(decData);
+        console.log('Decrypted client message: ',jsonData);
 
         if (clientConnection.connectionState === connectionState.init)
         {
+          console.log('Check initialize client connection with data ', jsonData.chainConnectionId, ab2str(clientConnection.connectionId));
           // check if init successful
-          if (jsonData.connectionState === connectionState.ready && JSON.stringify(jsonData.chainConnectionId) === JSON.stringify(clientConnection.connectionId)) {
+          if (jsonData.connectionState === connectionState.ready && jsonData.chainConnectionId === ab2str(clientConnection.connectionId)) {
             console.log('ClientMessage init successful');
             clientConnection.connectionState = connectionState.ready;
             resolveProm();
           } else {
-            rejectProm(jsonData.errorMessage);
+            console.log('Failed to initialize client connection with data ', jsonData.chainConnectionId, ab2str(clientConnection.connectionId));
+            rejectProm('Failed to initialize client connection');
           }
         }
 
@@ -105,7 +108,7 @@ window.stillepost.onion.clientConnection = (function() {
         clientConnection.onerror(err);
       });
     };
-    clientConnections[ab2str32(connectionId)] = clientConnection;
+    clientConnections[ab2str(connectionId)] = clientConnection;
     return clientConnection;
   };
 
@@ -113,7 +116,7 @@ window.stillepost.onion.clientConnection = (function() {
     // check if remote client closed the connection
     if (message.connectionState === connectionState.closed) {
       connection.connectionState = connectionState.closed;
-      delete clientConnections[ab2str32(connection.connectionId)];
+      delete clientConnections[ab2str(connection.connectionId)];
       connection.onclose();
     }
     // check if remote chain was rebuild - update pubInfo of remote client in this case
@@ -163,7 +166,7 @@ window.stillepost.onion.clientConnection = (function() {
       onmessage: function (message) { console.log('onmessage: ', message); },
       onclose: function() { console.log('connection onclose triggered')},
       processMessage: function (messageObj, seqNum) {
-        cu.decryptAES(messageObj.data, connection.aesKey, objToAb(messageObj.iv), messageObj.connectionData).then(function(decData) {
+        cu.decryptAES(messageObj.data, connection.aesKey, str2ab(messageObj.iv), messageObj.connectionData).then(function(decData) {
           var jsonData = JSON.parse(decData);
           handleClientMessage(connection, jsonData, seqNum);
         }).catch(function (err) {
@@ -193,10 +196,10 @@ window.stillepost.onion.clientConnection = (function() {
       console.log('received message from existing connection to remote client - trying to decrypt connectionData',jsonData);
       return cu.decryptRSA(jsonData.connectionData, _clientConPrivateKey).then(function(decConnectionData) {
         var jsonConnectionData = JSON.parse(decConnectionData),
-          clientCon = clientConnections[ab2str32(jsonConnectionData.connectionId)];
+          clientCon = clientConnections[jsonConnectionData.connectionId];
         // received response from other client
         if (clientCon) {
-          console.log('received response from client: ',jsonData);
+          console.log('received response from client: ',jsonConnectionData);
 
           if (jsonConnectionData.type === 'ack' && clientCon.isOrderedAndReliable) {
             handleAckMessage(clientCon, jsonConnectionData.seqNum);
@@ -209,20 +212,22 @@ window.stillepost.onion.clientConnection = (function() {
       console.log('received initial message from remote client',jsonData);
 
       cu.unwrapAESKey(jsonData.keyData, _clientConPrivateKey).then(function(key) {
-        return cu.decryptAES(jsonData.data, key, objToAb(jsonData.iv)).then(function(decryptedMessage) {
+        return cu.decryptAES(jsonData.data, key, str2ab(jsonData.iv)).then(function(decryptedMessage) {
           var decMsgJson = JSON.parse(decryptedMessage),
-            connection = createConnectionObj(decMsgJson.chainId, decMsgJson.socket, objToAb(decMsgJson.connectionId), key,
+            connection = createConnectionObj(decMsgJson.chainId, decMsgJson.socket, str2ab(decMsgJson.connectionId), key,
               decMsgJson.publicKey, connectionState.ready, decMsgJson.isOrderedAndReliable),
 
           // connection with this id already exists - return error
-          con = clientConnections[ab2str32(connection.connectionId)];
+          con = clientConnections[decMsgJson.connectionId];
+          console.log('decrypted initial message: ',decMsgJson);
           if (con) {
             sendEncryptedMessage({connectionState: 'error', errorMessage: 'ConnectionId already used'}, connection);
           } else {
-            clientConnections[ab2str32(connection.connectionId)] = connection;
+            clientConnections[decMsgJson.connectionId] = connection;
             // sending ack-message to init request
-            console.log('Sending ack message to init request');
-            sendEncryptedMessage({connectionState: connectionState.ready, chainConnectionId: connection.connectionId}, connection);
+            var ackMsg = {connectionState: connectionState.ready, chainConnectionId: decMsgJson.connectionId};
+            console.log('Sending ack message to init request ', ackMsg);
+            sendEncryptedMessage(ackMsg, connection);
             window.stillepost.onion.interfaces.onClientConnection(connection);
           }
         }, function(err) {
@@ -238,7 +243,7 @@ window.stillepost.onion.clientConnection = (function() {
   function closeConnection(connection) {
     connection.send({connectionState: connectionState.closed}).then(function() {
       connection.connectionState = connectionState.closed;
-      delete clientConnections[ab2str32(connection.connectionId)];
+      delete clientConnections[ab2str(connection.connectionId)];
       connection.onclose();
     });
   }
@@ -263,7 +268,7 @@ window.stillepost.onion.clientConnection = (function() {
         connection.sendBuffer = null;
         connection.receiveBuffer = null;
         connection.connectionState = connectionState.closed;
-        delete clientConnections[str2ab32(connection.connectionId)];
+        delete clientConnections[ab2str(connection.connectionId)];
       }
     }
   }
@@ -295,14 +300,14 @@ window.stillepost.onion.clientConnection = (function() {
   function sendAckMessage(connection, seqNum) {
     if (connection.connectionState === connectionState.ready) {
       return cu.encryptRSA(JSON.stringify({
-        connectionId: connection.connectionId,
+        connectionId: ab2str(connection.connectionId),
         seqNum: seqNum,
         type: 'ack'
       }), connection.publicKey).then(function (encConnectionData) {
 
         var dataLength = Math.random()*195 + 5,
           iv = cu.generateNonce();
-        var msg = {message: {data: cu.generateRandomBytes(dataLength), connectionData: encConnectionData, iv: iv}, chainId: connection.chainId, socket: connection.socket};
+        var msg = {message: {data: ab2str(cu.generateRandomBytes(dataLength)), connectionData: encConnectionData, iv: ab2str(iv)}, chainId: connection.chainId, socket: connection.socket};
         return onion.sendMessage('clientMessage', msg);
       });
     }
@@ -311,9 +316,9 @@ window.stillepost.onion.clientConnection = (function() {
   function sendEncryptedMessage(messageContent, connection, seqNum) {
     if (connection.connectionState === connectionState.ready) {
       var iv = cu.generateNonce();
-      return cu.encryptRSA(JSON.stringify({connectionId: connection.connectionId, seqNum: seqNum, type: 'msg'}), connection.publicKey).then(function (encConnectionData) {
+      return cu.encryptRSA(JSON.stringify({connectionId: ab2str(connection.connectionId), seqNum: seqNum, type: 'msg'}), connection.publicKey).then(function (encConnectionData) {
         return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv, encConnectionData).then(function (encData) {
-          var msg = {message: {data: encData, connectionData: encConnectionData, iv: iv}, chainId: connection.chainId, socket: connection.socket};
+          var msg = {message: {data: encData, connectionData: encConnectionData, iv: ab2str(iv)}, chainId: connection.chainId, socket: connection.socket};
           return onion.sendMessage('clientMessage', msg);
         });
       });

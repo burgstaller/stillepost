@@ -95,9 +95,12 @@ window.stillepost.onion.interfaces = (function() {
     return new Promise(function(resolv,reject){
     var request = {};
     request.url = url;
-    request.dataType = 'text';
+    request.dataType = 'binary';
+    request.responseType = 'arraybuffer';
+    request.processData = false;
+    request.type = 'GET';
     request.success = function(data){
-      var uInt8Array = new Uint8Array(str2ab(data));
+      var uInt8Array = str2ab(data);
       var blob = new Blob([uInt8Array], {type: 'application/octet-binary'});
       resolv(URL.createObjectURL(blob));
     };
