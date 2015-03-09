@@ -128,7 +128,7 @@ window.stillepost.cryptoUtils = (function() {
 	};
 
 	public.decryptAES = function(encData, key, iv, additionalData) {
-    var alg = {name: "AES-GCM", iv: new Uint8Array(iv)};
+    var alg = {name: "AES-GCM", iv: iv};
     if (additionalData)
       alg.additionalData = convertToAb(additionalData);
 		var buffer = str2ab(encData);

@@ -208,26 +208,26 @@ window.stillepost.onion.onionRouting = (function() {
           var iv = cu.generateNonce();
           console.log("encrypting data: "+dataToEncrypt);
           return cu.encryptAES(dataToEncrypt, key, iv, 'build').then(function(encData) {
-            return {keyData: keyData, chainData:encData, iv:iv};
+            return {keyData: keyData, chainData:encData, iv:ab2str(iv)};
           });
         });
     },
 
     exitNodeLayer = function() {
-      return buildLayer(keys[0], nodes[0].key, JSON.stringify({data: exitNodeData, chainId: chainIds[chainIds.length-1]}));
+      return buildLayer(keys[0], nodes[0].key, JSON.stringify({data: exitNodeData, chainId: ab2str(chainIds[chainIds.length-1])}));
     },
 
     entryNodeLayer = function(data) {
       var entryNodeData = {keyData: data.keyData, chainData: data.chainData, iv: data.iv};
       return buildLayer(keys[chainSize-1], nodes[chainSize-1].key,
-        JSON.stringify({nodeSocket: nodes[chainSize-2].socket, data: entryNodeData, chainIdIn: chainIds[0], chainIdOut: chainIds[1]}));
+        JSON.stringify({nodeSocket: nodes[chainSize-2].socket, data: entryNodeData, chainIdIn: ab2str(chainIds[0]), chainIdOut: ab2str(chainIds[1])}));
     },
 
     intermediateNodeLayer = function(data) {
       var intermediateData = {keyData: data.keyData, chainData: data.chainData, iv: data.iv};
       return buildLayer(keys[data.nodeIndex], nodes[data.nodeIndex].key,
-        JSON.stringify({nodeSocket: nodes[data.nodeIndex-1].socket, data: intermediateData, chainIdIn: chainIds[data.nodeIndex],
-        chainIdOut: chainIds[data.nodeIndex+1]}));
+        JSON.stringify({nodeSocket: nodes[data.nodeIndex-1].socket, data: intermediateData, chainIdIn: ab2str(chainIds[data.nodeIndex]),
+        chainIdOut: ab2str(chainIds[data.nodeIndex+1])}));
     },
 
     currentNodeIndex = 1,
@@ -275,7 +275,7 @@ window.stillepost.onion.onionRouting = (function() {
 
           // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
           _masterChainNonce = cu.generateNonce();
-          var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: _masterChainNonce,
+          var dataExitNode = {padding: "ensure that this data is the same size as the chainData for other sockets", nonce: ab2str(_masterChainNonce),
             pubChainId: _pubChainId};
           return createBuildMessage(keys, nodes, dataExitNode, chainIds).then(function(data) {
             _entryNodeSocket = nodes[chainSize-1].socket;
@@ -327,13 +327,13 @@ window.stillepost.onion.onionRouting = (function() {
     var iv = cu.generateNonce();
     return cu.encryptAES(JSON.stringify(message), masterChain[0], iv, commandName).then(function(encData) {
       var iv2 = cu.generateNonce();
-      return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv}), masterChain[1], iv2, commandName).then(function(encData) {
+      return cu.encryptAES(JSON.stringify({chainData: encData, iv: ab2str(iv)}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
-        return cu.encryptAES(JSON.stringify({chainData: encData, iv: iv2}), masterChain[2], iv, commandName).then(function(encData) {
+        return cu.encryptAES(JSON.stringify({chainData: encData, iv: ab2str(iv2)}), masterChain[2], iv, commandName).then(function(encData) {
           return cu.hashArrayObjects([cu.abConcat(chainIdMaster, masterSeqNumWrite, 'decrypt'),
             JSON.stringify({seqNum: masterSeqNumWrite++, chainId: chainIdMaster, data: encData})]).then(function(digestArray) {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
-              msg = {commandName: commandName, chainData: encData, iv: iv, chainId: digestArray[0], checksum: digestArray[1]};
+              msg = {commandName: commandName, chainData: encData, iv: ab2str(iv), chainId: digestArray[0], checksum: digestArray[1]};
             return con.send(msg).then(function() {
               console.log("Successfully sent message to entry node ",msg);
             });
@@ -345,11 +345,11 @@ window.stillepost.onion.onionRouting = (function() {
 
   unwrapMessage = function(message) {
     var data = null;
-    return cu.decryptAES(message.chainData, masterChain[2], objToAb(message.iv), message.commandName).then(function (decDataNode1) {
+    return cu.decryptAES(message.chainData, masterChain[2], str2ab(message.iv), message.commandName).then(function (decDataNode1) {
       data = JSON.parse(decDataNode1);
-      return cu.decryptAES(data.chainData, masterChain[1], objToAb(data.iv), message.commandName).then(function (decDataNode2) {
+      return cu.decryptAES(data.chainData, masterChain[1], str2ab(data.iv), message.commandName).then(function (decDataNode2) {
         data = JSON.parse(decDataNode2);
-        return cu.decryptAES(data.chainData, masterChain[0], objToAb(data.iv), message.commandName).then(function (decDataExitNode) {
+        return cu.decryptAES(data.chainData, masterChain[0], str2ab(data.iv), message.commandName).then(function (decDataExitNode) {
           return decDataExitNode;
         });
       });
@@ -365,7 +365,7 @@ window.stillepost.onion.onionRouting = (function() {
       return unwrapMessage(message).then(function(decData) {
         var data = JSON.parse(decData);
         console.log("Received message from exit node: ", data);
-        if (abEqual(objToAb(data.nonce), _masterChainNonce)) {
+        if (abEqual(str2ab(data.nonce), _masterChainNonce)) {
           console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
           _pubChainId = data.pubChainId;
           _masterChainCreated();
@@ -489,7 +489,7 @@ window.stillepost.onion.onionRouting = (function() {
       var con = null;
       if (workerMessage.data.success) {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
-        var command = {commandName: message.commandName, chainId: digestArray[0], iv: iv, chainData: workerMessage.data.data, checksum: digestArray[1]};
+        var command = {commandName: message.commandName, chainId: digestArray[0], iv: ab2str(iv), chainData: workerMessage.data.data, checksum: digestArray[1]};
         console.log('Sending command to next node',command);
         return con.send(command);
       } else {

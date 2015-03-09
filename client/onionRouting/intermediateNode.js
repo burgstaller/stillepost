@@ -16,8 +16,8 @@ window.stillepost.onion.intermediateNode = (function() {
 
   public.build = function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
     console.log("Sending build command to next node: ", content.nodeSocket);
-    content.chainIdIn = objToAb(content.chainIdIn);
-    content.chainIdOut = objToAb(content.chainIdOut);
+    content.chainIdIn = str2ab(content.chainIdIn);
+    content.chainIdOut = str2ab(content.chainIdOut);
     cu.hashArrayObjects([cu.abConcat(content.chainIdIn, 1, 'decrypt'), cu.abConcat(content.chainIdOut, 1, 'encrypt')]).then(function(digestArray) {
       // add entries to chainMap - which maps a chainId to a specific chain
       // entry for master -> exitNode direction
@@ -36,7 +36,7 @@ window.stillepost.onion.intermediateNode = (function() {
 
       var buildMessage = {
         commandName: 'build',
-        iv: objToAb(content.data.iv),
+        iv: content.data.iv,
         keyData: content.data.keyData,
         chainData: content.data.chainData
       };
@@ -75,7 +75,7 @@ window.stillepost.onion.intermediateNode = (function() {
   };
 
   public.message = function(message, node, webRTCConnection) {
-    var iv = objToAb(message.iv),
+    var iv = str2ab(message.iv),
 
       decWorker = new Worker('onionRouting/decryptionWorker.js');
     decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
@@ -117,7 +117,7 @@ window.stillepost.onion.intermediateNode = (function() {
   };
 
   public.close = function(message, node) {
-    var iv = objToAb(message.iv),
+    var iv = str2ab(message.iv),
       decWorker = new Worker('onionRouting/decryptionWorker.js');
     decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
 

@@ -19,7 +19,7 @@ window.stillepost.onion.exitNode = (function() {
 
   public.build = function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
     console.log("Received build message as exit node ", content);
-    content.chainId = objToAb(content.chainId);
+    content.chainId = str2ab(content.chainId);
     cu.hashArrayObjects([cu.abConcat(content.chainId, 1, 'decrypt'), cu.abConcat(content.chainId, 1, 'encrypt')]).then(function(digestArray) {
 
       var mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
@@ -42,7 +42,7 @@ window.stillepost.onion.exitNode = (function() {
       var iv = cu.generateNonce();
       return cu.encryptAES(JSON.stringify(content.data), unwrappedKey, iv, message.commandName).then(function (encData) {
         return cu.hash(JSON.stringify({seqNum: 1, chainId: content.chainId, data: encData})).then(function(digest) {
-          var command = {commandName: 'build', chainId: digestArray[1], iv: iv, chainData: encData, checksum: digest};
+          var command = {commandName: 'build', chainId: digestArray[1], iv: ab2str(iv), chainData: encData, checksum: digest};
           console.log("Exit node sending ack command: ", command);
           return webRTCConnection.send(command);
         });
@@ -69,7 +69,7 @@ window.stillepost.onion.exitNode = (function() {
   };
 
   function processMessage(message, node, webRTCConnection, successCallback) {
-    var iv = objToAb(message.iv),
+    var iv = str2ab(message.iv),
       decWorker = new Worker('onionRouting/decryptionWorker.js');
 
     decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});
@@ -118,7 +118,7 @@ window.stillepost.onion.exitNode = (function() {
   };
 
   public.close = function(message, node) {
-    var iv = objToAb(message.iv),
+    var iv = str2ab(message.iv),
       decWorker = new Worker('onionRouting/decryptionWorker.js');
 
     decWorker.postMessage({iv:iv, key:node.key, data:message.chainData, additionalData: message.commandName});

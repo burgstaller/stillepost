@@ -15,7 +15,7 @@ window.stillepost.onion.messageHandler = (function() {
     // if the message contains key data it is sent in the direction of chain master -> exit node
     if (message.keyData) {
       cu.unwrapAESKey(message.keyData).then(function (unwrappedKey) {
-        return cu.decryptAES(message.chainData, unwrappedKey, objToAb(message.iv), 'build').then(function (decData) {
+        return cu.decryptAES(message.chainData, unwrappedKey, str2ab(message.iv), 'build').then(function (decData) {
           var decryptedJson = JSON.parse(decData);
           console.log("Decrypted data: ", decryptedJson);
           if (decryptedJson.nodeSocket) {
