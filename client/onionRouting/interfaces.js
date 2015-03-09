@@ -102,7 +102,8 @@ window.stillepost.onion.interfaces = (function() {
     request.success = function(data){
       var uInt8Array = str2ab(data);
       var blob = new Blob([uInt8Array], {type: 'application/octet-binary'});
-      resolv(URL.createObjectURL(blob));
+      var filename = url.substring(url.lastIndexOf("/") + 1, url.length);
+      resolv({url: URL.createObjectURL(blob), filename : filename});
     };
 
     request.error = function(status){
