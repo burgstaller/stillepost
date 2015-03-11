@@ -9,7 +9,6 @@ window.stillepost.onion.onionRouting = (function() {
     clientConnection = window.stillepost.onion.clientConnection,
     chainSize = 3,
     directoryServerUrl = "http://127.0.0.1:42111",
-    _heartbeatInterval = 3000,
     _masterChainCreated = null,
     _masterChainError = null,
     _isMasterChainCreated = false,
@@ -17,14 +16,8 @@ window.stillepost.onion.onionRouting = (function() {
     _uuid = null,
     // current amount of tries to connect to the directory server
     _curDirectoryTryCount = 0,
-    // maximum amount of tries to connect to the directory server
-    _maxDirectoryTryCount = 3,
     // current amount of tries to create a chain
     _curCreateChainTryCount = 0,
-    // maximum amount of tries to create a chain
-    _maxCreateChainTryCount = 15,
-    _aajaxTimeout = 15000,
-    _createChainTimeout = 10000,
     _localSocket = {},
 
   //Id of the chain in which this node is the master
@@ -49,6 +42,62 @@ window.stillepost.onion.onionRouting = (function() {
   _entryNodeSocket = null,
   _exitNodeSocket = null,
   _pubChainId = null,
+
+  // Different error types passed to onerror event
+  errorTypes = {
+    // Critical error. Onion chain could not be established. Automatic recovery has failed.
+    chainError: 'chainError',
+    // All error types below are recovered automatically, if possible. If automatic recovery fails, a 'chainError' will be triggered.
+    // Error while building the chain.
+    buildError: 'buildError',
+    // Error while processing a message.
+    messageError: 'messageError',
+    // A node in the chain is no longer available.
+    nodeError: 'nodeError'
+  },
+
+  // Different notification types passed to onnotification event
+  notificationTypes =  {
+    // renew notification - triggered each time after the nodes' chain was successfully rebuild
+    renew: 'renew'
+  },
+
+  // CommandNames are used to differ between types of messages.
+  commandNames = {
+    build: 'build',
+    aajax: 'aajax',
+    clientMessage: 'clientMessage',
+    error: 'error',
+    close: 'close'
+  },
+
+  // Node types are used in the chainMap and chainIdHash. They allow to differ between the different link directions:
+  // encrypt => exit node to master node direction (message is encrypted)
+  // decrypt => master node to exit node direction (message is decrypted - outermost layer of onion message is peeled)
+  // exit => exit node requires special logic
+  linkType = {
+    encrypt: 'encrypt',
+    decrypt: 'decrypt',
+    exit: 'exit',
+
+    // Since the link direction is concatenated to the chainId hash, the exit node linkType needs special consideration.
+    getLinkTypeEncryptDefault: function(mode) {
+      if (!mode || mode === linkType.exit)
+        return linkType.encrypt;
+      return mode;
+    },
+    getLinkTypeDecryptDefault: function(mode) {
+      if (!mode || mode === linkType.exit)
+        return linkType.decrypt;
+      return mode;
+    }
+  },
+
+  // Paths to the worker files
+  worker = {
+    encrypt: 'onionRouting/encryptionWorker.js',
+    decrypt: 'onionRouting/decryptionWorker.js'
+  },
 
   aajaxMap = {
     curId: 0,
@@ -93,16 +142,16 @@ window.stillepost.onion.onionRouting = (function() {
             if (response.msg === "OK") {
               _uuid = response.data;
               console.log("Successfully registered at directory server with uuid " + response.data);
-              setInterval(sendHeartbeat, _heartbeatInterval)
+              setInterval(sendHeartbeat, stillepost.onion.interfaces.config.heartbeatInterval)
             } else
-              public.onerror('chainerror', {message: "Directory-Server did not respond with OK while registering, but with: "+response.msg})
+              public.onerror(errorTypes.chainError, {message: "Directory-Server did not respond with OK while registering, but with: "+response.msg})
           };
           xhr.onerror = function (e) {
             console.log("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
-            if (_curDirectoryTryCount < _maxDirectoryTryCount)
+            if (_curDirectoryTryCount < stillepost.onion.interfaces.config.maxDirectoryTryCount)
               registerAtDirectory();
             else
-              public.onerror('chainerror', {message: 'Could not connect to directory server', error: e.target});
+              public.onerror(errorTypes.chainError, {message: 'Could not connect to directory server', error: e.target});
           };
           xhr.open("post", directoryServerUrl + "/node", true);
           xhr.send(JSON.stringify(entry));
@@ -111,7 +160,7 @@ window.stillepost.onion.onionRouting = (function() {
       });
 
     }).catch(function(err) {
-      public.onerror('chainerror', {message: 'Error generating public RSA Key', error: err});
+      public.onerror(errorTypes.chainError, {message: 'Error generating public RSA Key', error: err});
     });
   },
 
@@ -122,7 +171,7 @@ window.stillepost.onion.onionRouting = (function() {
           console.log("onion: sendHeartbeat SUCCESS");
       };
       xhr.onerror = function(e) {
-          public.onerror('chainerror', {message: 'Directory server sendHeartbeat FAILURE', error: e.target})
+          public.onerror(errorTypes.chainError, {message: 'Directory server sendHeartbeat FAILURE', error: e.target})
       };
       xhr.open("put", directoryServerUrl + "/node/" + _uuid, true);
       xhr.send();
@@ -207,7 +256,7 @@ window.stillepost.onion.onionRouting = (function() {
         return cu.wrapAESKey(key, parsedPubKey).then(function(keyData) {
           var iv = cu.generateNonce();
           console.log("encrypting data: "+dataToEncrypt);
-          return cu.encryptAES(dataToEncrypt, key, iv, 'build').then(function(encData) {
+          return cu.encryptAES(dataToEncrypt, key, iv, commandNames.build).then(function(encData) {
             return {keyData: keyData, chainData:encData, iv:ab2str(iv)};
           });
         });
@@ -270,7 +319,7 @@ window.stillepost.onion.onionRouting = (function() {
         }
         chainIdMaster = chainIds[0];
         // pre-compute expected chainId hash
-        return cu.hash(cu.abConcat(chainIdMaster, masterSeqNumRead, 'encrypt')).then(function(digest) {
+        return cu.hash(cu.abConcat(chainIdMaster, masterSeqNumRead, linkType.encrypt)).then(function(digest) {
           masterHash = digest;
 
           // Create a nonce used to check successful chain build-up. The generated nonce is compared to the nonce in the answer of the exit node
@@ -280,7 +329,7 @@ window.stillepost.onion.onionRouting = (function() {
           return createBuildMessage(keys, nodes, dataExitNode, chainIds).then(function(data) {
             _entryNodeSocket = nodes[chainSize-1].socket;
             _exitNodeSocket = nodes[0].socket;
-            var command = {commandName: 'build', keyData: data.keyData, chainData: data.chainData, iv: data.iv};
+            var command = {commandName: commandNames.build, keyData: data.keyData, chainData: data.chainData, iv: data.iv};
             console.log("created command: ", command);
 
             var con = new webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
@@ -291,7 +340,7 @@ window.stillepost.onion.onionRouting = (function() {
                   if (!_isMasterChainCreated) {
                     reject("Create chain Timeout reached");
                   }
-                }, _createChainTimeout);
+                }, stillepost.onion.interfaces.config.createChainTimeout);
               });
             con.send(command).catch(function(err) {
               _masterChainError(err);
@@ -371,7 +420,7 @@ window.stillepost.onion.onionRouting = (function() {
           _masterChainCreated();
           _isMasterChainCreated = true;
           if (_curCreateChainTryCount > 0) {
-            public.onnotification('renew', {msg: 'Renewed chain', data: public.getPublicChainInformation()});
+            public.onnotification(notificationTypes.renew, {msg: 'Renewed chain', data: public.getPublicChainInformation()});
             clientConnection.onRenewChain(public.getPublicChainInformation());
           }
           _curCreateChainTryCount = 0;
@@ -381,7 +430,7 @@ window.stillepost.onion.onionRouting = (function() {
       }).catch(function(err) {
         var error = {message: 'Error decrypting build command response at chainMaster: ', error: err};
         _masterChainError(error);
-        public.onerror('messageError', error)
+        public.onerror(errorTypes.messageError, error)
       });
     },
 
@@ -395,7 +444,7 @@ window.stillepost.onion.onionRouting = (function() {
         var jsonData = JSON.parse(decData);
         console.log("parsed decrypted data: ", jsonData);
       }).catch(function(err) {
-        public.onerror('messageError', {message: 'error decrypting data', error: err});
+        public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
     },
 
@@ -407,7 +456,7 @@ window.stillepost.onion.onionRouting = (function() {
       return unwrapMessage(message).then(function (decData) {
         clientConnection.processClientMessage(decData);
       }).catch(function(err) {
-        public.onerror('messageError', {message: 'error decrypting data', error: err});
+        public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
     },
 
@@ -418,7 +467,7 @@ window.stillepost.onion.onionRouting = (function() {
         _curCreateChainTryCount = 1;
         closeSingleWebRTCConnection(webRTCConnection);
         resetMasterChain();
-        public.onerror('nodeError', {message: message.errorMessage.message, error: message.errorMessage.error});
+        public.onerror(errorTypes.nodeError, {message: message.errorMessage.message, error: message.errorMessage.error});
         public.createChain();
       }
     },
@@ -436,10 +485,10 @@ window.stillepost.onion.onionRouting = (function() {
               aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown)
           }
         } else {
-          public.onerror('messsageError', {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
+          public.onerror(errorTypes.messageError, {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
         }
       }).catch(function(err) {
-        public.onerror('messageError', {message: 'error decrypting data', error: err});
+        public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
     }
   };
@@ -447,10 +496,9 @@ window.stillepost.onion.onionRouting = (function() {
   function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite, mode) {
     console.log(errorMessage, errorObj, connection, chainId);
     if (chainId && seqNumWrite) {
-      var modeString = mode === 'exit' ? 'encrypt' : mode;
-      return cu.hash(cu.abConcat(chainId, seqNumWrite, modeString || 'encrypt')).then(function(digest) {
+      return cu.hash(cu.abConcat(chainId, seqNumWrite, linkType.getLinkTypeEncryptDefault(mode))).then(function(digest) {
         var errorMsg = {
-          commandName: 'error',
+          commandName: commandNames.error,
           chainId: digest,
           errorMessage: {
             message: errorMessage,
@@ -470,7 +518,7 @@ window.stillepost.onion.onionRouting = (function() {
   function updateMasterHash(message, webRTCConnection) {
     return new Promise(function(resolve, reject) {
       cu.hashArrayObjects([JSON.stringify({seqNum: masterSeqNumRead, chainId: chainIdMaster, data: message.chainData}),
-        cu.abConcat(chainIdMaster, ++masterSeqNumRead, 'encrypt')]).then(function(digestArray) {
+        cu.abConcat(chainIdMaster, ++masterSeqNumRead, linkType.encrypt)]).then(function(digestArray) {
         if (message.checksum !== digestArray[0])
           reject('Invalid checksum');
         masterHash = digestArray[1];
@@ -483,8 +531,7 @@ window.stillepost.onion.onionRouting = (function() {
 
   function encWorkerListener(workerMessage, webRTCConnection, iv, node, message) {
     // Try to compute chainID-hash for next node
-    var mode = node.type === 'exit' ? 'encrypt' : node.type;
-    cu.hashArrayObjects([cu.abConcat(node.chainIdOut, node.seqNumWrite, mode),
+    cu.hashArrayObjects([cu.abConcat(node.chainIdOut, node.seqNumWrite, linkType.getLinkTypeEncryptDefault(node.type)),
       JSON.stringify({seqNum: node.seqNumWrite++, chainId: node.chainIdOut, data: workerMessage.data.data})]).then(function(digestArray) {
       var con = null;
       if (workerMessage.data.success) {
@@ -495,7 +542,7 @@ window.stillepost.onion.onionRouting = (function() {
       } else {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
         //in encryption (or exit node) case send error to next node in chain
-        return con.send({commandName: "error", chainId: digestArray[0], errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
+        return con.send({commandName: commandNames.error, chainId: digestArray[0], errorMessage: {message: "Error while forwarding message at intermediate node", error: workerMessage.data.data}});
       }
     }).catch(function (error){
       //error callback for hash operation
@@ -541,18 +588,18 @@ window.stillepost.onion.onionRouting = (function() {
 
   function chainErrorRecovery(err, callback) {
     console.log("error creating chain: ",err);
-    public.onerror('builderror', {message: 'Error while creating chain', error: err});
+    public.onerror(errorTypes.buildError, {message: 'Error while creating chain', error: err});
 
     resetMasterChain();
-    if (_curCreateChainTryCount++ < _maxCreateChainTryCount) {
+    if (_curCreateChainTryCount++ < stillepost.onion.interfaces.config.maxCreateChainTryCount) {
       var delay = (_curCreateChainTryCount^2) * 100,
         callbackFunction = callback ? callback : public.createChain;
-      delay = delay > 5000 ? 5000 : delay;
+      delay = delay > stillepost.onion.interfaces.config.maxCreateChainInterval ? stillepost.onion.interfaces.config.maxCreateChainInterval : delay;
       setTimeout(wrapFunction(function(callbackFunction) {
           callbackFunction();
       }, this, [callbackFunction]), delay);
     } else {
-      public.onerror('chainerror',{message: 'Maximum amount of chain build attempts reached'});
+      public.onerror(errorTypes.chainError,{message: 'Maximum amount of chain build attempts reached'});
     }
   }
 
@@ -609,7 +656,7 @@ window.stillepost.onion.onionRouting = (function() {
     console.log("peer disconnected");
     if (_entryNodeSocket && _entryNodeSocket.address === remoteAddress && _entryNodeSocket.port === remotePort) {
       if (_isMasterChainCreated) {
-        public.onerror('nodeError', {message: 'Entry node disconnected'});
+        public.onerror(errorTypes.nodeError, {message: 'Entry node disconnected'});
         _curCreateChainTryCount = 1;
         resetMasterChain();
         public.createChain();
@@ -638,7 +685,7 @@ window.stillepost.onion.onionRouting = (function() {
   public.closeChain = function() {
     console.log('Onion layer close chain called - reseting chain information and sending close message');
     if (_isMasterChainCreated) {
-      return sendMessage('close',_pubChainId).then(function() {
+      return sendMessage(commandNames.close, _pubChainId).then(function() {
         resetMasterChain();
       });
     }
@@ -688,14 +735,14 @@ window.stillepost.onion.onionRouting = (function() {
       var id = aajaxMap.put({success: request.success, error: request.error});
       requestObject.id = id;
 
-      sendMessage('aajax', requestObject);
+      sendMessage(commandNames.aajax, requestObject);
 
       setTimeout(function() {
         var obj = aajaxMap.pop(id);
         if (obj && obj.error) {
           obj.error(null, 'timeout', 'Request timed out.');
         }
-      }, _aajaxTimeout);
+      }, stillepost.onion.interfaces.config.aajaxRequestTimeout);
     }
   };
 
@@ -710,6 +757,12 @@ window.stillepost.onion.onionRouting = (function() {
   public.masterNodeMessageHandler = masterNodeMessageHandler;
 
   public.updateMasterHash = updateMasterHash;
+
+  public.commandNames = commandNames;
+
+  public.linkType = linkType;
+
+  public.worker = worker;
 
   public.isMasterNode = function(chainIdHash) {
     return chainIdHash && masterHash && masterHash === chainIdHash;

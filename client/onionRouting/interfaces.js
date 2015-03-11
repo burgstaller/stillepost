@@ -8,6 +8,32 @@ window.stillepost.onion.interfaces = (function () {
         messageHandler = window.stillepost.onion.messageHandler,
         clientConnection = window.stillepost.onion.clientConnection;
 
+    // This object contains configuration properties
+    var config = {
+      // Timeout of aajax messages
+      aajaxRequestTimeout: 15000,
+      // Timeout of creating a chain
+      createChainTimeout: 10000,
+      // Interval in which heartbeat messages are send to the directory server
+      heartbeatInterval: 3000,
+
+      // maximum amount of tries to create a chain
+      maxCreateChainTryCount: 15,
+      // Chain re-build attempts are done in increasing intervals. This setting is used to define a maximum interval.
+      maxCreateChainInterval: 6000,
+
+      // maximum amount of tries to connect to the directory server
+      maxDirectoryTryCount: 3,
+
+      // ClientConnection configuration
+      // Timeout for client messages
+      clientMessageTimeout: 7000,
+      // Timeout for the client connection init message
+      clientMessageInitTimeout: 8000,
+      // Maximum amount of retransmission before an error is thrown
+      maxRetransmissionCount: 5
+    };
+
     /**
      * Initialize the library. This function is invoked automatically, once the library is loaded.
      */
@@ -164,6 +190,8 @@ window.stillepost.onion.interfaces = (function () {
     public.cleanUp = function () {
         onion.cleanUp();
     };
+
+    public.config = config;
 
     init();
 
