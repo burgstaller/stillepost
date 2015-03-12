@@ -15,7 +15,7 @@ window.stillepost.onion.messageHandler = (function() {
     // if the message contains key data it is sent in the direction of chain master -> exit node
     if (message.keyData) {
       cu.unwrapAESKey(message.keyData).then(function (unwrappedKey) {
-        return cu.decryptAES(message.chainData, unwrappedKey, str2ab(message.iv), 'build').then(function (decData) {
+        return cu.decryptAES(message.chainData, unwrappedKey, str2ab(message.iv), message.commandName).then(function (decData) {
           var decryptedJson = JSON.parse(decData);
           console.log("Decrypted data: ", decryptedJson);
           if (decryptedJson.nodeSocket) {
@@ -57,7 +57,7 @@ window.stillepost.onion.messageHandler = (function() {
         cu.hash(cu.abConcat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
           console.log('Forwarding error message to next node '+remoteAddress+":"+remotePort);
           var con = webrtc.createConnection(node.socket.address, node.socket.port);
-          return con.send({commandName: "error", chainId: digest, errorMessage: message.errorMessage}).then(function() {
+          return con.send({commandName: onion.commandNames.error, chainId: digest, errorMessage: message.errorMessage}).then(function() {
             onion.closeSingleWebRTCConnection(webRTCConnection);
             delete onion.chainMap[message.chainId];
           });
@@ -82,11 +82,11 @@ window.stillepost.onion.messageHandler = (function() {
     var handleClose = function(message) {
       return new Promise(function(resolve, reject) {
         var node = onion.chainMap[message.chainId];
-        if (node && node.type === 'decrypt') {
+        if (node && node.type === onion.linkType.decrypt) {
           intermediateNode.close(message, node);
-        } else if (node && node.type === 'exit') {
+        } else if (node && node.type === onion.linkType.exit) {
           exitNode.close(message, node);
-        } else if (node && node.type === 'encrypt') {
+        } else if (node && node.type === onion.linkType.encrypt) {
           intermediateNode.wrapMessage(message, node, null);
         }
         delete onion.chainMap[message.chainId];
@@ -98,18 +98,18 @@ window.stillepost.onion.messageHandler = (function() {
 
   function messageCallback(message) {
     if (message && message.node) {
-      if (message.node.type === "decrypt") {
+      if (message.node.type === onion.linkType.decrypt) {
         var fn = (typeof intermediateNode[message.message.commandName] === 'function') ?
           intermediateNode[message.message.commandName] : intermediateNode.message;
         fn(message.message, message.node, message.webRTCConnection);
-      } else if (message.node.type === "exit") {
+      } else if (message.node.type === onion.linkType.exit) {
         exitNode[message.message.commandName](message.message, message.node, message.webRTCConnection);
       } else {
         intermediateNode.wrapMessage(message.message, message.node, message.webRTCConnection);
       }
     } else if(message.master) {
       onion.masterNodeMessageHandler[message.message.commandName](message.message);
-    } else if (!(message.commandName === 'close')) {
+    } else if (!(message.commandName === onion.commandNames.close)) {
       onion.sendError("Received invalid chainId", null, message.webRTCConnection);
     }
   }
@@ -197,9 +197,8 @@ window.stillepost.onion.messageHandler = (function() {
     return new Promise(function(resolve, reject) {
       var node = onion.chainMap[message.chainId];
       if (node) {
-        var mode = node.type === 'exit' ? 'decrypt' : node.type;
         cu.hashArrayObjects([JSON.stringify({seqNum: node.seqNumRead, chainId: node.chainIdIn, data: message.chainData}),
-          cu.abConcat(node.chainIdIn, ++node.seqNumRead, mode)]).then(function (digestArray) {
+          cu.abConcat(node.chainIdIn, ++node.seqNumRead, onion.linkType.getLinkTypeDecryptDefault(node.type))]).then(function (digestArray) {
           if (digestArray[0] !== message.checksum)
             reject({errorMessage: 'Invalid checksum', webRTCConnection: webRTCConnection});
           onion.chainMap[digestArray[1]] = node;
