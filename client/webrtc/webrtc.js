@@ -88,6 +88,7 @@ window.stillepost.webrtc = (function() {
     this._remotePeer = peer;
     this._remotePort = port;
     this._dataChannel = null;
+    this._messageBuffer = "";
     this._promise = new Promise(function(resolv,reject) {
       this._connectionReady = resolv;
       this._connectionError = reject;
@@ -132,8 +133,22 @@ window.stillepost.webrtc = (function() {
       channel.onmessage = function(event) {
         if (event.data) {
           var data = JSON.parse(event.data);
-          console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
-          window.stillepost.onion.messageHandler.handleMessage(data, this._remotePeer, this._remotePort, this);
+          if(data.chunkCount === 1) {
+              console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
+              window.stillepost.onion.messageHandler.handleMessage(JSON.parse(data.msg), this._remotePeer, this._remotePort, this);
+          }
+          else{
+             if(data.chunkNumber === data.chunkCount){
+                 this._messageBuffer = this._messageBuffer.concat(data.msg);
+                 console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", JSON.parse(this._messageBuffer));
+                 window.stillepost.onion.messageHandler.handleMessage(JSON.parse(this._messageBuffer), this._remotePeer, this._remotePort, this);
+             }
+             else {
+                 if(data.chunkNumber === 1)
+                    this._messageBuffer = "";
+                 this._messageBuffer = this._messageBuffer.concat(data.msg);
+             }
+          }
         }
       }.bind(this);
 
@@ -198,7 +213,23 @@ window.stillepost.webrtc = (function() {
       if (this._dataChannel.readyState === "closed") {
         throw Error('Could not send message - dataChannel is closed');
       } else {
-        this._dataChannel.send(JSON.stringify(data));
+          var message = JSON.stringify(data),
+              messageLength = message.length,
+              chunkSize = 15000; //15KB
+
+          if(messageLength > chunkSize){
+            var chunkCount = Math.ceil(messageLength / chunkSize);
+            for(var i = 0; i < chunkCount; i++){
+                var messageObject = { chunkNumber: i+1, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
+                if(i === chunkCount - 1)
+                    messageObject.padding = createPadding(chunkSize - (messageLength - i*chunkSize));
+                this._dataChannel.send(JSON.stringify(messageObject));
+            }
+          }
+          else {
+            var messageObject = { chunkNumber: 1, chunkCount: 1, msg: message, padding: createPadding(chunkSize-messageLength)};
+            this._dataChannel.send(JSON.stringify(messageObject));
+          }
       }
     }.bind(this));
   };
@@ -212,6 +243,16 @@ window.stillepost.webrtc = (function() {
   WebRTCConnection.prototype.getRemoteSocket = function() {
     return {address: this._remotePeer, port: this._remotePort};
   };
+
+  function createPadding(length){
+      var padding = "",
+          symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+      for(var i = 0; i < length; i++){
+          padding += symbols.charAt(Math.floor(Math.random() * symbols.length));
+      }
+      return padding;
+  }
 
   function removeConnection(connectionId) {
     var tmp;
