@@ -223,25 +223,11 @@ window.stillepost.cryptoUtils = (function() {
       return data;
   }
 
-	// TODO: IMPORTANT - Remove following function - only used for test purpose
-	// Decrypt with given private key - Since we fake being a node - we need to pass privkey
-	public.testDecryptAES = function(encData, key, iv, privKey) {
-		var alg = {name: "AES-GCM", iv: iv};
-		var buffer = str2ab(encData);
-		return unwrapAESKey(key, privKey).then(function(unwrappedKey) {
-			return crypto.subtle.decrypt(alg, unwrappedKey, buffer).then(function(decData) {
-				return ab2str(decData);
-			});
-		});
-	};
-
-	//Same as above - we need to pass privateKey in order to fake being a node
-	function unwrapAESKey(wrappedKey, privKey) {
+	function unwrapAESKey(wrappedKey) {
 		// Since wrapped key is string we first need to parse it to a ArrayBuffer object
 		var wrappedKeyAB = str2ab(wrappedKey);
 		return crypto.subtle.unwrapKey(keyFormat, wrappedKeyAB, privKey, rsaAlgorithm, aesAlgorithm, false,["encrypt","decrypt"]);
 	}
-
 
 	return public;
 })();

@@ -11,7 +11,7 @@ window.stillepost.onion.interfaces = (function () {
     // This object contains configuration properties
     var config = {
       // Timeout of aajax messages
-      aajaxRequestTimeout: 15000,
+      aajaxRequestTimeout: 45000,
       // Timeout of creating a chain
       createChainTimeout: 10000,
       // Interval in which heartbeat messages are send to the directory server
@@ -108,9 +108,39 @@ window.stillepost.onion.interfaces = (function () {
      */
     public.onClientConnection = clientConnection.onClientConnection;
 
+    /**
+     * Onion layer events - This functions are intended to be overwritten with custom functions, which handle the events.
+     */
     public.onionlayer = {
-        onerror: onion.onerror,
-        onnotification: onion.onnotification
+      /**
+       * Following error types are supported:.
+       * - chainError: Critical error. Onion chain could not be established. Automatic recovery has failed.
+       *
+       * All error types below are recovered automatically, if possible. If automatic recovery fails, a 'chainError' will be triggered.
+       * - buildError: Error while building the chain.
+       * - messageError: Error while processing a message.
+       * - nodeError: A node in the chain is no longer available.
+       * @param type .. the string representation of the error type
+       * @param errorThrown .. JSON object which contains error information - consists of following two properties:
+       *  - message: the error text message
+       *  - error: the error object
+       */
+      onerror: function (type, errorThrown) {
+        console.error('onion layer on error called with ',type, errorThrown);
+      },
+      /**
+       * Following notification types are supported:
+       * - renew: Triggered each time after the nodes' chain was successfully rebuild.
+       *          The new public chain information is passed as notification.data
+       *
+       * @param type .. the string representation of the notification type
+       * @param notificationText .. JSON object which contains notification information - consists of following two properties:
+       *  - message: the notification text message
+       *  - data: the notification data
+       */
+      onnotification: function(type, notification) {
+        console.info('onion layer onnotification called with type: ',type,notification);
+      }
     };
 
     /**
@@ -134,7 +164,7 @@ window.stillepost.onion.interfaces = (function () {
      *     url
      */
     public.aajax = function (request) {
-        onion.aajax(request);
+        return onion.aajax(request);
     };
 
     /**
@@ -162,11 +192,11 @@ window.stillepost.onion.interfaces = (function () {
                 resolv({url: URL.createObjectURL(blob), filename: filename});
             };
 
-            request.error = function (status) {
-                reject(status);
+            request.error = function (jqXHR, textStatus, errorThrown) {
+                reject({textStatus: textStatus, errorThrown: errorThrown});
             };
 
-            onion.aajax(request);
+            return onion.aajax(request);
         });
     };
 

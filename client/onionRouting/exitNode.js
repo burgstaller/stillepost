@@ -147,8 +147,9 @@ window.stillepost.onion.exitNode = (function() {
       decryptedRequest.success = function(data, textStatus, jqXHR) {
         console.log('ajax success called with status '+textStatus, data);
         var encryptionIV = cu.generateNonce(),
-          encWorker = new Worker(onion.worker.encrypt);
-        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, data: ab2str(new Uint8Array(data)), textStatus: textStatus, success:true}), additionalData: message.commandName});
+          encWorker = new Worker(onion.worker.encrypt),
+          parsedData = typeof data === 'string' ? data : ab2str(new Uint8Array(data));
+        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, data: parsedData, textStatus: textStatus, success:true}), additionalData: message.commandName});
         encWorker.onmessage = function(workerMessage) {
           onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
         };

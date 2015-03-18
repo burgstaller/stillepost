@@ -379,7 +379,7 @@ window.stillepost.onion.onionRouting = (function() {
       return cu.encryptAES(JSON.stringify({chainData: encData, iv: ab2str(iv)}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
         return cu.encryptAES(JSON.stringify({chainData: encData, iv: ab2str(iv2)}), masterChain[2], iv, commandName).then(function(encData) {
-          return cu.hashArrayObjects([cu.abConcat(chainIdMaster, masterSeqNumWrite, 'decrypt'),
+          return cu.hashArrayObjects([cu.abConcat(chainIdMaster, masterSeqNumWrite, linkType.decrypt),
             JSON.stringify({seqNum: masterSeqNumWrite++, chainId: chainIdMaster, data: encData})]).then(function(digestArray) {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
               msg = {commandName: commandName, chainData: encData, iv: ab2str(iv), chainId: digestArray[0], checksum: digestArray[1]};
@@ -420,7 +420,7 @@ window.stillepost.onion.onionRouting = (function() {
           _masterChainCreated();
           _isMasterChainCreated = true;
           if (_curCreateChainTryCount > 0) {
-            public.onnotification(notificationTypes.renew, {msg: 'Renewed chain', data: public.getPublicChainInformation()});
+            public.onnotification(notificationTypes.renew, {message: 'Renewed chain', data: public.getPublicChainInformation()});
             clientConnection.onRenewChain(public.getPublicChainInformation());
           }
           _curCreateChainTryCount = 0;
@@ -474,15 +474,19 @@ window.stillepost.onion.onionRouting = (function() {
 
     aajax: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        console.log("decrypted data: ", decData);
+        //console.log("decrypted data: ", decData);
         var jsonData = JSON.parse(decData),
           aajaxObject = aajaxMap.pop(jsonData.id);
-        console.log("parsed decrypted data: ", jsonData);
+        //console.log("parsed decrypted data: ", jsonData);
         if (aajaxObject) {
           if (jsonData.success) {
-            aajaxObject.success(jsonData.data, jsonData.textStatus, null);
-          } else if (aajaxObject.error) {
-              aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown)
+            if (aajaxObject.success)
+              aajaxObject.success(jsonData.data, jsonData.textStatus, null);
+            aajaxObject.resolve({data: jsonData.data, textStatus: jsonData.textStatus});
+          } else {
+            if (aajaxObject.error)
+              aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown);
+            aajaxObject.reject({message: 'Request timed out.', type: 'timeout'});
           }
         } else {
           public.onerror(errorTypes.messageError, {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
@@ -616,11 +620,11 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.onerror = function(type, errorThrown) {
-    console.error('onion layer on error called with ',type, errorThrown);
+    stillepost.onion.interfaces.onionlayer.onerror(type, errorThrown);
   };
 
-  public.onnotification = function(type, notificationText) {
-    console.info('onion layer onnotification called with type: ',type,notificationText);
+  public.onnotification = function(type, notification) {
+    stillepost.onion.interfaces.onionlayer.onnotification(type, notification);
   };
 
   public.init = function() {
@@ -709,7 +713,7 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.aajax = function(request) {
-    if (request.success) {
+    return new Promise(function(resolve,reject) {
       var requestObject = {};
 
       requestObject.accepts = request.accepts;
@@ -732,7 +736,7 @@ window.stillepost.onion.onionRouting = (function() {
         }
       });
 
-      var id = aajaxMap.put({success: request.success, error: request.error});
+      var id = aajaxMap.put({success: request.success, error: request.error, resolve: resolve, reject: reject});
       requestObject.id = id;
 
       sendMessage(commandNames.aajax, requestObject);
@@ -741,9 +745,10 @@ window.stillepost.onion.onionRouting = (function() {
         var obj = aajaxMap.pop(id);
         if (obj && obj.error) {
           obj.error(null, 'timeout', 'Request timed out.');
+          reject({message: 'Request timed out.', type: 'timeout'});
         }
       }, stillepost.onion.interfaces.config.aajaxRequestTimeout);
-    }
+    });
   };
 
   public.chainMap = chainMap;
