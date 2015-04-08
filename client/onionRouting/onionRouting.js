@@ -42,6 +42,7 @@ window.stillepost.onion.onionRouting = (function() {
   _entryNodeSocket = null,
   _exitNodeSocket = null,
   _pubChainId = null,
+  _chainNonce = null,
 
   // Different error types passed to onerror event
   errorTypes = {
@@ -374,7 +375,7 @@ window.stillepost.onion.onionRouting = (function() {
    */
   sendChainMessage = function(commandName, message) {
     var iv = cu.generateNonce();
-    return cu.encryptAES(JSON.stringify(message), masterChain[0], iv, commandName).then(function(encData) {
+    return cu.encryptAES(JSON.stringify({content: message, nonce: ab2str(_chainNonce)}), masterChain[0], iv, commandName).then(function(encData) {
       var iv2 = cu.generateNonce();
       return cu.encryptAES(JSON.stringify({chainData: encData, iv: ab2str(iv)}), masterChain[1], iv2, commandName).then(function(encData) {
         iv = cu.generateNonce();
@@ -417,6 +418,7 @@ window.stillepost.onion.onionRouting = (function() {
         if (abEqual(str2ab(data.nonce), _masterChainNonce)) {
           console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
           _pubChainId = data.pubChainId;
+          _chainNonce = str2ab(data.chainNonce);
           _masterChainCreated();
           _isMasterChainCreated = true;
           if (_curCreateChainTryCount > 0) {

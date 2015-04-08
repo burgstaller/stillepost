@@ -22,8 +22,9 @@ window.stillepost.onion.exitNode = (function() {
     content.chainId = str2ab(content.chainId);
     cu.hashArrayObjects([cu.abConcat(content.chainId, 1, onion.linkType.decrypt), cu.abConcat(content.chainId, 1, onion.linkType.encrypt)]).then(function(digestArray) {
 
-      var mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
-        seqNumRead: 1, seqNumWrite: 2, type: onion.linkType.exit};
+      var chainNonce = cu.generateNonce(),
+        mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
+        seqNumRead: 1, seqNumWrite: 2, type: onion.linkType.exit, nonce: chainNonce};
 
       // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
       onion.chainMap[digestArray[0]] = mapEntry;
@@ -40,6 +41,8 @@ window.stillepost.onion.exitNode = (function() {
 
       // In order to acknowledge a successful chain build-up we return a build-command message, which contains the encrypted nonce signifying a successful build-up
       var iv = cu.generateNonce();
+      content.data.chainNonce = ab2str(chainNonce);
+
       return cu.encryptAES(JSON.stringify(content.data), unwrappedKey, iv, message.commandName).then(function (encData) {
         return cu.hash(JSON.stringify({seqNum: 1, chainId: content.chainId, data: encData})).then(function(digest) {
           var command = {commandName: onion.commandNames.build, chainId: digestArray[1], iv: ab2str(iv), chainData: encData, checksum: digest};
@@ -78,7 +81,14 @@ window.stillepost.onion.exitNode = (function() {
       if (workerMessage.data.success) {
         // handle the received message as exit node
         if (successCallback)
-          successCallback(JSON.parse(workerMessage.data.data));
+          var msg = JSON.parse(workerMessage.data.data);
+          if (abEqual(str2ab(msg.nonce), node.nonce))
+            successCallback(msg.content);
+          else {
+            console.warn('Dropped message - Received invalid nonce: ', msg.nonce, node.nonce);
+            onion.sendError("Received invalid nonce", msg.nonce, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
+          }
+
       } else {
         onion.sendError("Error while decrypting message at exit node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
       }

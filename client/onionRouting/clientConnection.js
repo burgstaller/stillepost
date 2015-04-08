@@ -87,7 +87,8 @@ window.stillepost.onion.clientConnection = (function() {
     // by the caller of the createClientConnection function
     clientConnection.processMessage = function (messageObj, seqNum) {
       cu.decryptAES(messageObj.data, clientConnection.aesKey, str2ab(messageObj.iv), messageObj.connectionData).then(function (decData) {
-        var jsonData = JSON.parse(decData);
+        var messageData = JSON.parse(decData),
+          jsonData = messageData.content;
         console.log('Decrypted client message: ',jsonData);
 
         if (clientConnection.connectionState === connectionState.init)
@@ -97,6 +98,7 @@ window.stillepost.onion.clientConnection = (function() {
           if (jsonData.connectionState === connectionState.ready && jsonData.chainConnectionId === ab2str(clientConnection.connectionId)) {
             console.log('ClientMessage init successful');
             clientConnection.connectionState = connectionState.ready;
+            clientConnection.connectionNonce = str2ab(messageData.connectionNonce);
             resolveProm();
           } else {
             console.log('Failed to initialize client connection with data ', jsonData.chainConnectionId, ab2str(clientConnection.connectionId));
@@ -170,7 +172,13 @@ window.stillepost.onion.clientConnection = (function() {
       processMessage: function (messageObj, seqNum) {
         cu.decryptAES(messageObj.data, connection.aesKey, str2ab(messageObj.iv), messageObj.connectionData).then(function(decData) {
           var jsonData = JSON.parse(decData);
-          handleClientMessage(connection, jsonData, seqNum);
+          if (abEqual(str2ab(jsonData.connectionNonce), connection.connectionNonce))
+            handleClientMessage(connection, jsonData.content, seqNum);
+          else {
+            var errorMsg = 'Received invalid nonce';
+            console.warn(errorMsg, jsonData.connectionNonce, connection.connectionNonce);
+            connection.error(errorMsg)
+          }
         }).catch(function (err) {
           connection.onerror(err);
         });
@@ -227,7 +235,9 @@ window.stillepost.onion.clientConnection = (function() {
           } else {
             clientConnections[decMsgJson.connectionId] = connection;
             // sending ack-message to init request
-            var ackMsg = {connectionState: connectionState.ready, chainConnectionId: decMsgJson.connectionId};
+            var connectionNonce = cu.generateNonce(),
+              ackMsg = {connectionState: connectionState.ready, chainConnectionId: decMsgJson.connectionId, connectionNonce: ab2str(connectionNonce)};
+            connection.connectionNonce = connectionNonce;
             console.log('Sending ack message to init request ', ackMsg);
             sendEncryptedMessage(ackMsg, connection);
             window.stillepost.onion.interfaces.onClientConnection(connection);
@@ -319,7 +329,7 @@ window.stillepost.onion.clientConnection = (function() {
     if (connection.connectionState === connectionState.ready) {
       var iv = cu.generateNonce();
       return cu.encryptRSA(JSON.stringify({connectionId: ab2str(connection.connectionId), seqNum: seqNum, type: messageTypes.msg}), connection.publicKey).then(function (encConnectionData) {
-        return cu.encryptAES(JSON.stringify(messageContent), connection.aesKey, iv, encConnectionData).then(function (encData) {
+        return cu.encryptAES(JSON.stringify({content: messageContent, connectionNonce: ab2str(connection.connectionNonce)}), connection.aesKey, iv, encConnectionData).then(function (encData) {
           var msg = {message: {data: encData, connectionData: encConnectionData, iv: ab2str(iv)}, chainId: connection.chainId, socket: connection.socket};
           return onion.sendMessage(onion.commandNames.clientMessage, msg);
         });
