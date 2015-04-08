@@ -1,7 +1,8 @@
 <h1>Login</h1>
-<input type="text"
-       ng-model="username" ng-keyup="$event.keyCode == 13 && login()">
-<button ng-click="login()" >
+<form>
+<input type="text" class="form-control"
+       ng-model="username"  ng-keyup="$event.keyCode == 13 && login()" required autofocus>
+<button class="btn btn-lg btn-primary btn-block" ng-click="login()" >
     login
 </button>
-
+</form>

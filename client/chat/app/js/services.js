@@ -14,9 +14,10 @@ chatServices.factory('ChatServer', ['$resource',
           _socket = null,
           _username = null,
           _chatServerUrl = null,
-          _users = null,
+          _users = {},
           _connections = {},
           _heartbeatInterval = 3000,
+          _chatObject = null,
           oi = null,
           cu = null;
 
@@ -45,7 +46,7 @@ chatServices.factory('ChatServer', ['$resource',
           var xhr = new XMLHttpRequest();
           xhr.onload = function () {
               var response = JSON.parse(this.responseText);
-              console.log("chat: getUserList SUCCESS");
+              //console.log("chat: getUserList SUCCESS");
               if(typeof(successCallback) !== "undefined")
                   successCallback(response);
           };
@@ -53,7 +54,7 @@ chatServices.factory('ChatServer', ['$resource',
               console.log("chat: getUserList FAILURE:");
               console.log(e.target);
           };
-          xhr.open("get", _chatServerUrl + "/user?sessionKey="+encodeURIComponent(_sessionKey)+"&keyHash="+encodeURIComponent(_publicKeyHash), true);
+          xhr.open("get", _chatServerUrl + "/user?sessionKey="+encodeURIComponent(_sessionKey)+"&keyHash="+encodeURIComponent(_publicKeyHash).replace(/%00/g, "customnullbyte"), true);
           xhr.send();
       }
 
@@ -61,7 +62,7 @@ chatServices.factory('ChatServer', ['$resource',
           var xhr = new XMLHttpRequest();
           xhr.onload = function () {
               var response = JSON.parse(this.responseText);
-              console.log("chat: sendHeartbeat SUCCESS");
+              //console.log("chat: sendHeartbeat SUCCESS");
               if(typeof(successCallback) !== "undefined")
                   successCallback(response);
           };
@@ -69,8 +70,28 @@ chatServices.factory('ChatServer', ['$resource',
               console.log("chat: sendHeartbeat FAILURE:");
               console.log(e.target);
           };
-          xhr.open("put", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash)+"?sessionKey="+encodeURIComponent(_sessionKey), true);
+          xhr.open("put", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash).replace(/%00/g, "customnullbyte")+"?sessionKey="+encodeURIComponent(_sessionKey), true);
           xhr.send();
+      }
+
+      function mergeNewUsers(newUsers){
+          // loop over all new usres
+          for(var u in newUsers){
+              if (newUsers.hasOwnProperty(u)){
+                  // if user is new, add him to local object
+                  // otherwise, merge attributes
+                  if(typeof(_users[u]) === "undefined"){
+                      _users[u] = newUsers[u];
+                  } else {
+                      // merge attributes
+                      for(var attr in newUsers[u]){
+                          if (newUsers[u].hasOwnProperty(attr)){
+                              _users[u][attr] = newUsers[u][attr];
+                          }
+                      }
+                  }
+              }
+          }
       }
 
       return {
@@ -83,6 +104,17 @@ chatServices.factory('ChatServer', ['$resource',
 
            returns chatObject in successCallback: the object with which the ui interacts
            */
+          getChatObject: function(){
+              return _chatObject;
+          },
+          getUsers: function(){
+              return _users;
+          },
+
+          getUsername: function(){
+            return _username;
+          },
+
           init: function(params, successCallback){
               // read params
               if(typeof(params) !== "object"){
@@ -107,22 +139,25 @@ chatServices.factory('ChatServer', ['$resource',
               // init commands
               oi.setupClientConnections(_privateKey, _publicKey);
 
-              var chatObject = null;
+
               login(function(response){
 
+                  // start heartbeats
                   setInterval(sendHeartbeat, _heartbeatInterval);
-                  chatObject = {
+                  _chatObject = {
                       // methods
                       updateUserList: function () {
                           getUserList(function(response){
-                              _users = response.data;
-                              chatObject.onUserListUpdate(_users);
+                              //_users = response.data;
+                              mergeNewUsers(response.data);
+
+                              _chatObject.onUserListUpdate(_users);
                           });
                       },
                       sendMessage: function(user, message){
                           if(typeof(_connections[user.hash]) === "undefined"){
                               _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key, true);
-                              _connections[user.hash].onmessage = function(msg){chatObject.onReceiveMessage(msg, user);};
+                              _connections[user.hash].onmessage = function(msg){_chatObject.onReceiveMessage(msg, user);};
                           }
                           _connections[user.hash].send(message, function() {console.log('successcallback called');},
                               function() {console.error('errorcallback called');});
@@ -137,31 +172,28 @@ chatServices.factory('ChatServer', ['$resource',
                           cu.hash(connection.publicKey).then(function(publicKeyHash){
                               if(typeof(_users[publicKeyHash]) === "undefined"){
                                   getUserList(function(response){
-                                      _users = response.data;
-                                      chatObject.onUserListUpdate(_users);
+                                      //_users = response.data;
+                                      mergeNewUsers(response.data);
+                                      _chatObject.onUserListUpdate(_users);
                                       if(typeof(_users[publicKeyHash]) === "undefined"){
                                           console.log("chat: onClientConnected FAILURE no such user registered");
                                           return;
                                       }
                                       _connections[publicKeyHash] = connection;
-                                      _connections[publicKeyHash].onmessage = function(msg){chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
+                                      _connections[publicKeyHash].onmessage = function(msg){_chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
                                   });
                               } else {
                                   // TODO: is this really correct? (probably not)
                                   _connections[publicKeyHash] = connection;
-                                  _connections[publicKeyHash].onmessage = function(msg){chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
+                                  _connections[publicKeyHash].onmessage = function(msg){_chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
                               }
                           });
                       }
                   };
-                  oi.onClientConnection = chatObject.onClientConnected;
+                  oi.onClientConnection = _chatObject.onClientConnected;
                   if(typeof(successCallback) === "function")
-                      successCallback(chatObject);
+                      successCallback(_chatObject);
               });
           }
       };
-    /*
-    return $resource('phones/:phoneId.json', {}, {
-      query: {method:'GET', params:{phoneId:'phones'}, isArray:true}
-    });*/
   }]);
