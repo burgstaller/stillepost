@@ -1,0 +1,33 @@
+<div class="row">
+
+  <div class="col-md-8">
+    <div ng-if="activeChat()">
+      <h2>Currently Chatting with {{currentChat.user.username}}</h2>
+      <div class="messageContainer" ng-repeat="m in currentChat.messages">
+        {{m.timestamp + ' ' +m.username}}: {{m.message}}
+      </div>
+      <form ng-submit="sendMessage()">
+        <div>
+          <input type="text" ng-model="currentChat.messageText" placeholder="Type your message" />
+
+        <span>
+            <button type="submit">Send</button>
+        </span>
+        </div>
+      </form>
+    </div>
+    <div ng-if="!activeChat()">
+      <h2>No active chat</h2>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <h3>Logged in users</h3>
+    <input class="btn btn-default" type="button" ng-click="refreshUsers()" value="Refresh">
+    <ul class="list-unstyled">
+      <li ng-repeat="user in users">
+        <input class="btn btn-default" type="button" ng-click="openChat(user)" value="{{user.username}}">
+      </li>
+    </ul>
+  </div>
+
+</div>

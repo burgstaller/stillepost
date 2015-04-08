@@ -53,6 +53,7 @@ var chatClients = function(){
                 exportList[client].username = list[client].username;
                 exportList[client].chainid = list[client].chainid;
                 exportList[client].key = list[client].key;
+                exportList[client].hash = client;
             }
         }
         return exportList;
@@ -85,6 +86,7 @@ var chatClients = function(){
     return pub;
 }();
 
+// enable heartbeat timeout check
 setInterval(function(){
     console.log("checkingHeartbeats");
     chatClients.checkHeartbeats();
@@ -118,7 +120,8 @@ server.get('/user', function (req, res, next) {
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var sessionKey = req.query.sessionKey;
     var keyHash = req.query.keyHash;
-    console.log("received userlist request from sessionKey:"+sessionKey);
+    keyHash = keyHash.replace(/customnullbyte/g, "\0");
+    console.log("received userlist request from sessionKey:"+sessionKey+" keyhash: "+keyHash);
     var clients = chatClients.getClientList(keyHash, sessionKey);
     if(typeof(clients) === "string")
         res.send(400, createResponseObject(clients));
@@ -134,6 +137,7 @@ server.del('/user/:keyHash', function (req, res, next) {
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var sessionKey = req.query.sessionKey;
     var keyHash = req.params.keyHash;
+    keyHash = keyHash.replace(/customnullbyte/g, "\0");
     console.log("received logout request from sessionKey:"+sessionKey);
     var msg = chatClients.removeClient(keyHash, sessionKey);
     if(msg !== "OK")
@@ -148,6 +152,7 @@ server.put('/user/:keyHash', function (req, res, next) {
     res.header("Access-Control-Allow-Headers", "X-Requested-With");
     var sessionKey = req.params.sessionKey;
     var keyHash = req.params.keyHash;
+    keyHash = keyHash.replace(/customnullbyte/g, "\0");
     console.log("received heartbeat from sessionKey: "+sessionKey+" and hash: "+keyHash);
     var msg = chatClients.updateHeartbeat(keyHash, sessionKey);
     if(msg !== "OK")
