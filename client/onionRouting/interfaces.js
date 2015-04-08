@@ -12,6 +12,8 @@ window.stillepost.onion.interfaces = (function () {
     var config = {
       // Timeout of aajax messages
       aajaxRequestTimeout: 45000,
+      // Timeout of aajax messages
+      aFileDownTimeout: 200000,
       // Timeout of creating a chain
       createChainTimeout: 10000,
       // Interval in which heartbeat messages are send to the directory server

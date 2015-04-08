@@ -8,6 +8,7 @@ window.stillepost.onion.exitNode = (function() {
   // map of h(chainId || seqNum) -> pubChainId
   exitNodeMap = {},
   messageBuffer = {},
+  _activeWebWorkers = 0,
   onion = window.stillepost.onion.onionRouting,
   cu = window.stillepost.cryptoUtils,
   webrtc = window.stillepost.webrtc;
@@ -25,7 +26,7 @@ window.stillepost.onion.exitNode = (function() {
 
       var chainNonce = cu.generateNonce(),
         mapEntry = {socket: {address: remoteAddress, port: remotePort}, key: unwrappedKey, chainIdIn: content.chainId, chainIdOut: content.chainId,
-        seqNumRead: 1, seqNumWrite: 2, type: onion.linkType.exit, nonce: chainNonce};
+        seqNumRead: 1, seqNumWrite: 2, type: onion.linkType.exit, nonce: chainNonce, nextMessageId: 0};
 
       // Add chainMap entry, since the current node works as exit node in this chain, we only store the mapping for the "previous" node in the chain.
       onion.chainMap[digestArray[0]] = mapEntry;
@@ -61,14 +62,8 @@ window.stillepost.onion.exitNode = (function() {
 
   public.message = function(message, node, webRTCConnection) {
     processMessage(message, node, webRTCConnection, function(data) {
-      var encryptionIV = cu.generateNonce(),
-        encWorker = new Worker(onion.worker.encrypt);
       console.log("Received message through chain ", data);
-
-      encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify(data), additionalData: message.commandName});
-      encWorker.onmessage = function(workerMessage) {
-        onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-      };
+      chunkMessage(data, node, webRTCConnection, message);
     });
   };
 
@@ -97,7 +92,6 @@ window.stillepost.onion.exitNode = (function() {
   }
 
   function handleChunks(msg, successCallback) {
-    // messageObject = { chunkNumber: ++i, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
     console.log('handle chunk: ',msg);
     if (msg.chunkCount > 1) {
       var msgBuf = messageBuffer[msg.id];
@@ -121,15 +115,47 @@ window.stillepost.onion.exitNode = (function() {
     }
   }
 
-  public.forwardClientMessage = function(message, node, webRTCConnection) {
-    var encryptionIV = cu.generateNonce(),
-      encWorker = new Worker(onion.worker.encrypt);
-    console.log("Forwarding client message through chain ", node, message.chainData);
+  function chunkMessage(content, node, webRTCConnection, messageObj) {
+    var messageObject = null,
+      message  = JSON.stringify(content),
+      messageLength = message.length,
+      chunkSize = window.stillepost.onion.interfaces.config.chunkSize,
+      msgEncryptionOverheadBytes = 200;
 
-    encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify(message.chainData), additionalData: message.commandName});
-    encWorker.onmessage = function(workerMessage) {
-      onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-    };
+    // take account of encryption overhead in comparison
+    if (messageLength > chunkSize - msgEncryptionOverheadBytes) {
+      var messageId = node.nextMessageId++,
+        chunkCount = Math.ceil(messageLength / chunkSize);
+      for (var i = 0; i < chunkCount; i++) {
+        messageObject = { id: messageId, chunkNumber: i, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
+        if(i === chunkCount - 1)
+          messageObject.padding = cu.generateRandomBytes(chunkSize - (messageLength - i*chunkSize));
+        encryptMessage(messageObject, node, webRTCConnection, messageObj);
+      }
+    } else {
+      messageObject = { id: node.nextMessageId++, chunkNumber: 0, chunkCount: 1, msg: message, padding: ab2str(cu.generateRandomBytes(chunkSize-msgEncryptionOverheadBytes-messageLength))};
+      encryptMessage(messageObject, node, webRTCConnection, messageObj);
+    }
+  }
+
+  function encryptMessage(content, node, webRTCConnection, messageObj) {
+    if (_activeWebWorkers > 25)
+      setTimeout(wrapFunction(encryptMessage, this, [content, node, webRTCConnection, messageObj]), 2000);
+    else {
+      _activeWebWorkers++;
+      var encryptionIV = cu.generateNonce(),
+        encWorker = new Worker(onion.worker.encrypt);
+      console.log("Forwarding message through chain ", node, content);
+      encWorker.postMessage({iv: encryptionIV, key: node.key, data: JSON.stringify(content), additionalData: messageObj.commandName});
+      encWorker.onmessage = function (workerMessage) {
+        _activeWebWorkers--;
+        onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, messageObj);
+      };
+    }
+  }
+
+  public.forwardClientMessage = function(message, node, webRTCConnection) {
+    chunkMessage(message.chainData, node, webRTCConnection, message);
   };
 
   public.clientMessage = function(message, node, webRTCConnection) {
@@ -176,31 +202,21 @@ window.stillepost.onion.exitNode = (function() {
     };
   };
 
-
   public.aajax = function(message, node, webRTCConnection) {
     processMessage(message, node, webRTCConnection, function (decryptedRequest) {
 
       decryptedRequest.success = function(data, textStatus, jqXHR) {
         console.log('ajax success called with status '+textStatus, data);
-        var encryptionIV = cu.generateNonce(),
-          encWorker = new Worker(onion.worker.encrypt),
-          parsedData = typeof data === 'string' ? data : ab2str(new Uint8Array(data));
-        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, data: parsedData, textStatus: textStatus, success:true}), additionalData: message.commandName});
-        encWorker.onmessage = function(workerMessage) {
-          onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-        };
+        var parsedData = typeof data === 'string' ? data : ab2str(new Uint8Array(data));
+        chunkMessage({id: decryptedRequest.id, data: parsedData, textStatus: textStatus, success:true},
+          node, webRTCConnection, message);
       };
 
       decryptedRequest.error = function(jqXHR, textStatus, errorThrown) {
         console.log('ajax error called with status '+textStatus, errorThrown);
-        var encryptionIV = cu.generateNonce(),
-          encWorker = new Worker(onion.worker.encrypt);
 
-        encWorker.postMessage({iv:encryptionIV, key: node.key, data: JSON.stringify({id: decryptedRequest.id, errorThrown: errorThrown, textStatus: textStatus,
-          success:false}), additionalData: message.commandName});
-        encWorker.onmessage = function(workerMessage) {
-          onion.encWorkerListener(workerMessage, webRTCConnection, encryptionIV, node, message);
-        };
+        chunkMessage({id: decryptedRequest.id, errorThrown: errorThrown, textStatus: textStatus,
+          success:false}, node, webRTCConnection, message);
       };
 
       $.ajax(decryptedRequest);

@@ -44,6 +44,7 @@ window.stillepost.onion.onionRouting = (function() {
   _pubChainId = null,
   _chainNonce = null,
   _nextMessageId = 0,
+  _messageBuffer = {},
 
   // Different error types passed to onerror event
   errorTypes = {
@@ -379,7 +380,7 @@ window.stillepost.onion.onionRouting = (function() {
       message  = JSON.stringify(message),
       messageLength = message.length,
       chunkSize = window.stillepost.onion.interfaces.config.chunkSize,
-      msgEncryptionOverheadBytes = 1000;
+      msgEncryptionOverheadBytes = 200;
 
     // take account of encryption overhead in comparison
     if (messageLength > chunkSize - msgEncryptionOverheadBytes) {
@@ -468,8 +469,7 @@ window.stillepost.onion.onionRouting = (function() {
      */
     message: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        var jsonData = JSON.parse(decData);
-        console.log("parsed decrypted data: ", jsonData);
+        handleChunks(JSON.parse(decData), function(data) {console.log(data);});
       }).catch(function(err) {
         public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
@@ -481,7 +481,7 @@ window.stillepost.onion.onionRouting = (function() {
      */
     clientMessage: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        clientConnection.processClientMessage(decData);
+        handleChunks(JSON.parse(decData), clientConnection.processClientMessage);
       }).catch(function(err) {
         public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
@@ -501,28 +501,52 @@ window.stillepost.onion.onionRouting = (function() {
 
     aajax: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        //console.log("decrypted data: ", decData);
-        var jsonData = JSON.parse(decData),
-          aajaxObject = aajaxMap.pop(jsonData.id);
-        //console.log("parsed decrypted data: ", jsonData);
-        if (aajaxObject) {
-          if (jsonData.success) {
-            if (aajaxObject.success)
-              aajaxObject.success(jsonData.data, jsonData.textStatus, null);
-            aajaxObject.resolve({data: jsonData.data, textStatus: jsonData.textStatus});
+        handleChunks(JSON.parse(decData), function(jsonData) {
+          var aajaxObject = aajaxMap.pop(jsonData.id);
+          if (aajaxObject) {
+            if (jsonData.success) {
+              if (aajaxObject.success)
+                aajaxObject.success(jsonData.data, jsonData.textStatus, null);
+              aajaxObject.resolve({data: jsonData.data, textStatus: jsonData.textStatus});
+            } else {
+              if (aajaxObject.error)
+                aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown);
+              aajaxObject.reject({message: 'Request timed out.', type: 'timeout'});
+            }
           } else {
-            if (aajaxObject.error)
-              aajaxObject.error(null, jsonData.textStatus, jsonData.errorThrown);
-            aajaxObject.reject({message: 'Request timed out.', type: 'timeout'});
+            public.onerror(errorTypes.messageError, {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
           }
-        } else {
-          public.onerror(errorTypes.messageError, {message: 'aajax object with id '+jsonData.id+" not found", error: Error()})
-        }
+        });
       }).catch(function(err) {
         public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
     }
   };
+
+  function handleChunks(msg, successCallback) {
+    console.log('handle chunk: ',msg);
+    if (msg.chunkCount > 1) {
+      var msgBuf = _messageBuffer[msg.id];
+      if (!msgBuf) {
+        msgBuf = {};
+        _messageBuffer[msg.id] = msgBuf;
+        msgBuf.chunkCount = msg.chunkCount;
+        msgBuf.buffer = new Array(msgBuf.chunkCount);
+        msgBuf.curCount = 1;
+        msgBuf.buffer[msg.chunkNumber] = msg.msg;
+      } else {
+        msgBuf.buffer[msg.chunkNumber] = msg.msg;
+        if (++msgBuf.curCount === msgBuf.chunkCount) {
+          msgBuf.buffer[msg.chunkNumber] = msg.msg;
+          var assembledMsg = msgBuf.buffer.join('');
+          successCallback(JSON.parse(assembledMsg));
+        }
+        console.log('current chunk count: ',msgBuf.chunkCount);
+      }
+    } else if (msg.chunkCount === 1 && successCallback) {
+      successCallback(JSON.parse(msg.msg));
+    }
+  }
 
   function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite, mode) {
     console.log(errorMessage, errorObj, connection, chainId);
@@ -774,7 +798,7 @@ window.stillepost.onion.onionRouting = (function() {
           obj.error(null, 'timeout', 'Request timed out.');
           reject({message: 'Request timed out.', type: 'timeout'});
         }
-      }, stillepost.onion.interfaces.config.aajaxRequestTimeout);
+      }, stillepost.onion.interfaces.config.aFileDownTimeout);
     });
   };
 

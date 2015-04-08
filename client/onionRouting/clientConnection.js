@@ -199,7 +199,7 @@ window.stillepost.onion.clientConnection = (function() {
 
   public.processClientMessage = function(decChainData) {
     console.log("decrypted data: ", decChainData);
-    var jsonData = JSON.parse(decChainData);
+    var jsonData = decChainData;
 
     // Check if message is initial message - if not, decrypt connectionData
     if (jsonData.connectionData) {
