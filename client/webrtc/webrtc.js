@@ -215,7 +215,7 @@ window.stillepost.webrtc = (function() {
       } else {
           var message = JSON.stringify(data),
               messageLength = message.length,
-              chunkSize = 15000; //15KB
+              chunkSize = window.stillepost.onion.interfaces.config.chunkSize; //15KB
 
           if(messageLength > chunkSize){
             var chunkCount = Math.ceil(messageLength / chunkSize);

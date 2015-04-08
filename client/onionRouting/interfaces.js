@@ -31,7 +31,10 @@ window.stillepost.onion.interfaces = (function () {
       // Timeout for the client connection init message
       clientMessageInitTimeout: 8000,
       // Maximum amount of retransmission before an error is thrown
-      maxRetransmissionCount: 5
+      maxRetransmissionCount: 5,
+
+      // ChunkSize of a message - messages smaller than chunkSize are padded
+      chunkSize: 15000
     };
 
     /**

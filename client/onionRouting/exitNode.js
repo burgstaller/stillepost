@@ -7,6 +7,7 @@ window.stillepost.onion.exitNode = (function() {
 
   // map of h(chainId || seqNum) -> pubChainId
   exitNodeMap = {},
+  messageBuffer = {},
   onion = window.stillepost.onion.onionRouting,
   cu = window.stillepost.cryptoUtils,
   webrtc = window.stillepost.webrtc;
@@ -80,19 +81,44 @@ window.stillepost.onion.exitNode = (function() {
     decWorker.onmessage = function(workerMessage){
       if (workerMessage.data.success) {
         // handle the received message as exit node
-        if (successCallback)
-          var msg = JSON.parse(workerMessage.data.data);
-          if (abEqual(str2ab(msg.nonce), node.nonce))
-            successCallback(msg.content);
-          else {
-            console.warn('Dropped message - Received invalid nonce: ', msg.nonce, node.nonce);
-            onion.sendError("Received invalid nonce", msg.nonce, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
-          }
+        var msg = JSON.parse(workerMessage.data.data);
+        console.log('exit node received msg chunk',msg);
 
+        if (abEqual(str2ab(msg.nonce), node.nonce)) {
+          handleChunks(JSON.parse(msg.content), successCallback);
+        } else {
+          console.warn('Dropped message - Received invalid nonce: ', msg.nonce, node.nonce);
+          onion.sendError("Received invalid nonce", msg.nonce, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
+        }
       } else {
         onion.sendError("Error while decrypting message at exit node", workerMessage.data.data, webRTCConnection, node.chainIdOut, node.seqNumWrite, node.type);
       }
     };
+  }
+
+  function handleChunks(msg, successCallback) {
+    // messageObject = { chunkNumber: ++i, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
+    console.log('handle chunk: ',msg);
+    if (msg.chunkCount > 1) {
+      var msgBuf = messageBuffer[msg.id];
+      if (!msgBuf) {
+        msgBuf = {};
+        messageBuffer[msg.id] = msgBuf;
+        msgBuf.chunkCount = msg.chunkCount;
+        msgBuf.buffer = new Array(msgBuf.chunkCount);
+        msgBuf.curCount = 1;
+        msgBuf.buffer[msg.chunkNumber] = msg.msg;
+      } else {
+        msgBuf.buffer[msg.chunkNumber] = msg.msg;
+        if (++msgBuf.curCount === msgBuf.chunkCount) {
+          msgBuf.buffer[msg.chunkNumber] = msg.msg;
+          var assembledMsg = msgBuf.buffer.join('');
+          successCallback(JSON.parse(assembledMsg));
+        }
+      }
+    } else if (msg.chunkCount === 1 && successCallback) {
+      successCallback(JSON.parse(msg.msg));
+    }
   }
 
   public.forwardClientMessage = function(message, node, webRTCConnection) {

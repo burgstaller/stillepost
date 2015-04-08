@@ -18,7 +18,9 @@ window.stillepost.cryptoUtils = (function() {
 	};
 
   public.generateRandomBytes = function(length) {
-    return crypto.getRandomValues(new Uint8Array(length));
+    if (length > 0) {
+      return crypto.getRandomValues(new Uint8Array(length));
+    }
   };
 
 	public.generateRandomInt32 = function() {

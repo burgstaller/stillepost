@@ -43,6 +43,7 @@ window.stillepost.onion.onionRouting = (function() {
   _exitNodeSocket = null,
   _pubChainId = null,
   _chainNonce = null,
+  _nextMessageId = 0,
 
   // Different error types passed to onerror event
   errorTypes = {
@@ -374,6 +375,31 @@ window.stillepost.onion.onionRouting = (function() {
    * @param message ... the message to send over the chain
    */
   sendChainMessage = function(commandName, message) {
+    var messageObject = null,
+      message  = JSON.stringify(message),
+      messageLength = message.length,
+      chunkSize = window.stillepost.onion.interfaces.config.chunkSize,
+      msgEncryptionOverheadBytes = 1000;
+
+    // take account of encryption overhead in comparison
+    if (messageLength > chunkSize - msgEncryptionOverheadBytes) {
+      var messageId = _nextMessageId++,
+        chunkCount = Math.ceil(messageLength / chunkSize),
+        promises = [];
+      for (var i = 0; i < chunkCount; i++) {
+        messageObject = { id: messageId, chunkNumber: i, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
+        if(i === chunkCount - 1)
+          messageObject.padding = cu.generateRandomBytes(chunkSize - (messageLength - i*chunkSize));
+        promises.push(sendMessageChunk(commandName, JSON.stringify(messageObject)));
+      }
+      return Promise.all(promises);
+    } else {
+      messageObject = { id: _nextMessageId++, chunkNumber: 0, chunkCount: 1, msg: message, padding: ab2str(cu.generateRandomBytes(chunkSize-msgEncryptionOverheadBytes-messageLength))};
+      return sendMessageChunk(commandName, JSON.stringify(messageObject));
+    }
+  },
+
+  sendMessageChunk = function(commandName, message) {
     var iv = cu.generateNonce();
     return cu.encryptAES(JSON.stringify({content: message, nonce: ab2str(_chainNonce)}), masterChain[0], iv, commandName).then(function(encData) {
       var iv2 = cu.generateNonce();
@@ -442,7 +468,6 @@ window.stillepost.onion.onionRouting = (function() {
      */
     message: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        console.log("decrypted data: ", decData);
         var jsonData = JSON.parse(decData);
         console.log("parsed decrypted data: ", jsonData);
       }).catch(function(err) {
