@@ -223,7 +223,11 @@ window.stillepost.webrtc = (function() {
                 var messageObject = { chunkNumber: i+1, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
                 if(i === chunkCount - 1)
                     messageObject.padding = createPadding(chunkSize - (messageLength - i*chunkSize));
-                this._dataChannel.send(JSON.stringify(messageObject));
+                
+		while(this._dataChannel.bufferedAmount > 15500000){}
+		this._dataChannel.send(JSON.stringify(messageObject));
+		if(this._dataChannel.bufferedAmount !== 0)
+			console.log('BUFFEREDAMOUNT'+this._dataChannel.bufferedAmount);
             }
           }
           else {
