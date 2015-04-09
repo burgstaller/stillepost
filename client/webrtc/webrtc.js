@@ -13,7 +13,7 @@ window.stillepost.webrtc = (function() {
       }]
     },
     dataChannelOptions = {
-      reliable: false
+      ordered: true
     },
     // list of all open webRTC connections
     connections = [],
@@ -88,7 +88,7 @@ window.stillepost.webrtc = (function() {
     this._remotePeer = peer;
     this._remotePort = port;
     this._dataChannel = null;
-    this._messageBuffer = "";
+    this._messageBuffers = {};
     this._promise = new Promise(function(resolv,reject) {
       this._connectionReady = resolv;
       this._connectionError = reject;
@@ -138,16 +138,24 @@ window.stillepost.webrtc = (function() {
               window.stillepost.onion.messageHandler.handleMessage(JSON.parse(data.msg), this._remotePeer, this._remotePort, this);
           }
           else{
-             if(data.chunkNumber === data.chunkCount){
-                 this._messageBuffer = this._messageBuffer.concat(data.msg);
-                 console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", JSON.parse(this._messageBuffer));
-                 window.stillepost.onion.messageHandler.handleMessage(JSON.parse(this._messageBuffer), this._remotePeer, this._remotePort, this);
-             }
-             else {
-                 if(data.chunkNumber === 1)
-                    this._messageBuffer = "";
-                 this._messageBuffer = this._messageBuffer.concat(data.msg);
-             }
+              if(this._messageBuffers[data.msgId] === undefined){
+                  var buffer = { messagesReceived: 1, messageBuffer:[]};
+                  buffer.messageBuffer[data.chunkNumber] = data.msg;
+                  this._messageBuffers[data.msgId] = buffer;
+              }
+              else{
+                  var buffer = this._messageBuffers[data.msgId];
+                  buffer.messagesReceived += 1;
+                  buffer.messageBuffer[data.chunkNumber] = data.msg;
+                  if(buffer.messagesReceived === data.chunkCount){
+                     var messageAsString = '';
+                     for (var i = 1; i <= data.chunkCount; i++){
+                         messageAsString += buffer.messageBuffer[i];
+                     }
+                     delete buffer;
+                     window.stillepost.onion.messageHandler.handleMessage(JSON.parse(messageAsString), this._remotePeer, this._remotePort, this);
+                  }
+              }
           }
         }
       }.bind(this);
@@ -218,21 +226,18 @@ window.stillepost.webrtc = (function() {
               chunkSize = window.stillepost.onion.interfaces.config.chunkSize; //15KB
 
           if(messageLength > chunkSize){
-            var chunkCount = Math.ceil(messageLength / chunkSize);
+            var chunkCount = Math.ceil(messageLength / chunkSize),
+                msgId = window.stillepost.cryptoUtils.generateRandomInt32();
             for(var i = 0; i < chunkCount; i++){
-                var messageObject = { chunkNumber: i+1, chunkCount: chunkCount, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
+                var messageObject = { chunkNumber: i+1, chunkCount: chunkCount, msgId: msgId, msg: message.slice(i*chunkSize,chunkSize*i + chunkSize)};
                 if(i === chunkCount - 1)
                     messageObject.padding = createPadding(chunkSize - (messageLength - i*chunkSize));
-                
-		while(this._dataChannel.bufferedAmount > 15500000){}
-		this._dataChannel.send(JSON.stringify(messageObject));
-		if(this._dataChannel.bufferedAmount !== 0)
-			console.log('BUFFEREDAMOUNT'+this._dataChannel.bufferedAmount);
+                sendMessageObject(this._dataChannel, messageObject);
             }
           }
           else {
             var messageObject = { chunkNumber: 1, chunkCount: 1, msg: message, padding: createPadding(chunkSize-messageLength)};
-            this._dataChannel.send(JSON.stringify(messageObject));
+            sendMessageObject(this._dataChannel, messageObject);
           }
       }
     }.bind(this));
@@ -247,6 +252,15 @@ window.stillepost.webrtc = (function() {
   WebRTCConnection.prototype.getRemoteSocket = function() {
     return {address: this._remotePeer, port: this._remotePort};
   };
+
+  function sendMessageObject(dataChannel, messageObject){
+      if(dataChannel.bufferedAmount > 10000000) { //10MB
+        setTimeout(function() { sendMessageObject(dataChannel, messageObject); }, 200); //200ms
+      }
+      else {
+        dataChannel.send(JSON.stringify(messageObject));
+      }
+  }
 
   function createPadding(length){
       var padding = "",
