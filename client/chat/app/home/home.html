@@ -3,8 +3,8 @@
   <div class="col-md-8">
     <div ng-if="activeChat()">
       <h2>Currently Chatting with {{currentChat.user.username}}</h2>
-      <div class="messageContainer" ng-repeat="m in currentChat.messages">
-        {{m.timestamp + ' ' +m.username}}: {{m.message}}
+      <div class="messageContainer"  ng-class="{'ownMsg': m.username === username,'partnerMsg' : m.username !== username }" ng-repeat="m in currentChat.messages">
+        ({{m.timestamp | date:"MM/dd/yyyy hh:mm:ss"}}) <b>{{m.username}}</b>: {{m.message}}
       </div>
       <form ng-submit="sendMessage()">
         <div>
@@ -22,10 +22,11 @@
   </div>
   <div class="col-md-4">
     <h3>Logged in users</h3>
-    <input class="btn btn-default" type="button" ng-click="refreshUsers()" value="Refresh">
+    <input class="btn btn-default btn-xs" type="button" ng-click="refreshUsers()" value="Refresh">
     <ul class="list-unstyled">
       <li ng-repeat="user in users">
         <input class="btn btn-default" type="button" ng-click="openChat(user)" value="{{user.username}}">
+        <span class="userUnreadMsgs" ng-if="unreadMsgs(user)">{{user.unreadMsgs}}</span>
       </li>
     </ul>
   </div>

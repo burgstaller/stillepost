@@ -1,1 +1,21 @@
 /* app css stylesheet */
+.userUnreadMsgs{
+    color: #ee2222;
+    background-color: #eeeeee;
+    border:1px solid black;
+    padding: 2px;
+    border-radius:5px;
+}
+
+.messageContainer{
+    padding:2px;
+    margin: 5px 0 5px 0;
+    border-radius: 10px;
+}
+
+.messageContainer.ownMsg{
+    background-color: rgba(210, 210, 210, .6);
+}
+.messageContainer.partnerMsg{
+    background-color: rgba(30, 30, 255, .6);
+}
