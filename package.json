@@ -1,0 +1,24 @@
+{
+  "name": "stillepost",
+  "version": "1.0.0",
+  "description": "A package to communicate anonymously over the web",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/burgstaller/stillepost.git"
+  },
+  "author": "Florian Burgstaller",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/burgstaller/stillepost/issues"
+  },
+  "homepage": "https://github.com/burgstaller/stillepost#readme",
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-contrib-concat": "^0.5.1",
+    "grunt-contrib-uglify": "^0.9.1"
+  }
+}
