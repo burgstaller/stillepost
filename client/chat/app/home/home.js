@@ -11,24 +11,26 @@ angular.module('chat.home', ['ngRoute'])
 .controller('ChatHomeCtrl', ['$scope', 'ChatServer', '$interval', function($scope, ChatServer, $interval) {
   var _chatObject = ChatServer.getChatObject(),
       _chatHistory = {},
-      _username = ChatServer.getUsername();
+      _placeholder = "type message";
   $scope.users = ChatServer.getUsers();
+  $scope.username = ChatServer.getUsername();
+
   $scope.currentChat = {
     messages:[],
-    messageText: "type message"
+    messageText: _placeholder
   };
   $scope.sendMessage = function(){
     _chatObject.sendMessage($scope.currentChat.user, $scope.currentChat.messageText);
     if(typeof(_chatHistory[$scope.currentChat.user.hash]) === "undefined"){
       _chatHistory[$scope.currentChat.user.hash] = [];
     }
-    var timestamp = new Date();
     _chatHistory[$scope.currentChat.user.hash].push({
-      username:_username,
-      timestamp: timestamp.toISOString(),
+      username:  $scope.username,
+      timestamp: Date.now(),
       message: $scope.currentChat.messageText
     });
     $scope.currentChat.messages = _chatHistory[$scope.currentChat.user.hash];
+    $scope.currentChat.messageText = "";
   };
   $scope.openChat = function(user){
     $scope.currentChat = {
@@ -36,16 +38,17 @@ angular.module('chat.home', ['ngRoute'])
       messages: _chatHistory[user.hash],
       messageText: ""
     };
+    user.unreadMsgs = 0;
   };
 
   _chatObject.onReceiveMessage = function(msg, user){
-    if(typeof(_chatHistory[user.hash]) === "undefined"){
-      _chatHistory[user.hash] = [];
+    _chatHistory[user.hash] = typeof(_chatHistory[user.hash]) === "undefined" ? []: _chatHistory[user.hash];
+    if($scope.currentChat.user.hash !== user.hash) {
+      user.unreadMsgs = typeof(user.unreadMsgs) === "undefined" ? 1 : user.unreadMsgs+1;
     }
-    var timestamp = new Date();
     _chatHistory[user.hash].push({
       username:user.username,
-      timestamp: timestamp.toISOString(),
+      timestamp: Date.now(),
       message: msg
     });
 
@@ -69,6 +72,8 @@ angular.module('chat.home', ['ngRoute'])
   $scope.activeChat = function(){
     return typeof($scope.currentChat.user) !== 'undefined';
   };
-
+  $scope.unreadMsgs = function(user){
+    return typeof(user.unreadMsgs) !== 'undefined' && user.unreadMsgs > 0;
+  };
 
 }]);
