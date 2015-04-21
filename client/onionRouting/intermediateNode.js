@@ -15,7 +15,7 @@ window.stillepost.onion.intermediateNode = (function() {
   };
 
   public.build = function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
-    console.log("Sending build command to next node: ", content.nodeSocket);
+    logToConsole("Sending build command to next node: ", content.nodeSocket);
     content.chainIdIn = str2ab(content.chainIdIn);
     content.chainIdOut = str2ab(content.chainIdOut);
     cu.hashArrayObjects([cu.abConcat(content.chainIdIn, 1, onion.linkType.decrypt), cu.abConcat(content.chainIdOut, 1, onion.linkType.encrypt)]).then(function(digestArray) {
@@ -40,7 +40,7 @@ window.stillepost.onion.intermediateNode = (function() {
         keyData: content.data.keyData,
         chainData: content.data.chainData
       };
-      console.log("Command to send: ", buildMessage);
+      logToConsole("Command to send: ", buildMessage);
       // Create webrtc connection with next node in the chain and send the data
       var con = webrtc.createConnection(content.nodeSocket.address, content.nodeSocket.port);
       con.send(buildMessage).catch(function (err) {
@@ -63,8 +63,8 @@ window.stillepost.onion.intermediateNode = (function() {
   public.wrapMessage = function(message, node, webRTCConnection) {
     var iv = cu.generateNonce(),
       dataToEncrypt = {chainData: message.chainData, iv: message.iv};
-    console.log("Encrypting and forwarding data to next node: ",node);
-    console.log(dataToEncrypt);
+    logToConsole("Encrypting and forwarding data to next node: ",node);
+    logToConsole(dataToEncrypt);
 
     var encWorker = new Worker(onion.worker.encrypt);
     encWorker.postMessage({iv:iv, key:node.key, data:JSON.stringify(dataToEncrypt), additionalData: message.commandName});
@@ -84,7 +84,7 @@ window.stillepost.onion.intermediateNode = (function() {
 
       var hashErrorCallback = function (error){
         //error callback for hash operation
-        console.log('error in decWorkerListener: ', error);
+        logToConsole('error in decWorkerListener: ', error);
         onion.closeSingleWebRTCConnection(webRTCConnection);
       };
 
@@ -101,7 +101,7 @@ window.stillepost.onion.intermediateNode = (function() {
               chainData: workerMessage.data.data.chainData,
               checksum: digestArray[1]
             };
-          console.log('Forwarding message to next node in exit node direction');
+          logToConsole('Forwarding message to next node in exit node direction');
           con.send(command).catch(function (err) {
             return webRTCConnection.send({commandName: onion.commandNames.error, chainId: digestArray[0], errorMessage: {message: "Error while sending message to next node", error: err}});
           });
@@ -138,9 +138,9 @@ window.stillepost.onion.intermediateNode = (function() {
               chainData: workerMessage.data.data.chainData,
               checksum: digestArray[1]
             };
-          console.log('Forwarding close message to next node in exit node direction');
+          logToConsole('Forwarding close message to next node in exit node direction');
           con.send(command).catch(function (err) {
-            console.log('Error while sending close message to next node');
+            logToConsole('Error while sending close message to next node');
           });
         });
       }

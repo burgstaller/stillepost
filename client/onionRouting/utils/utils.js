@@ -129,3 +129,13 @@ $.ajaxTransport("+binary", function(options, originalOptions, jqXHR){
     };
   }
 });
+
+/**
+ *
+ */
+var logging = true;
+function logToConsole(){
+    if(logging === true){
+         console.log(Array.prototype.slice.call(arguments));
+    }
+}

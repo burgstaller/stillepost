@@ -19,7 +19,7 @@ window.stillepost.chat = (function() {
     function login(successCallback){
         var xhr = new XMLHttpRequest();
         xhr.onload = function () {
-            console.log("chat: login SUCCESS");
+            logToConsole("chat: login SUCCESS");
 
             var response = JSON.parse(this.responseText);
             _sessionKey = response.data.sessionKey;
@@ -30,8 +30,8 @@ window.stillepost.chat = (function() {
             });
         };
         xhr.onerror = function(e) {
-            console.log("chat: login FAILURE:");
-            console.log(e.target);
+            logToConsole("chat: login FAILURE:");
+            logToConsole(e.target);
         };
         xhr.open("post", _chatServerUrl + "/user", true);
         xhr.send(JSON.stringify({"key":_publicKey,"username":_username,"chainid":_chainId,"socket":_socket}));
@@ -41,13 +41,13 @@ window.stillepost.chat = (function() {
         var xhr = new XMLHttpRequest();
         xhr.onload = function () {
             var response = JSON.parse(this.responseText);
-            console.log("chat: getUserList SUCCESS");
+            logToConsole("chat: getUserList SUCCESS");
             if(typeof(successCallback) !== "undefined")
                 successCallback(response);
         };
         xhr.onerror = function(e) {
-            console.log("chat: getUserList FAILURE:");
-            console.log(e.target);
+            logToConsole("chat: getUserList FAILURE:");
+            logToConsole(e.target);
         };
         xhr.open("get", _chatServerUrl + "/user?sessionKey="+encodeURIComponent(_sessionKey)+"&keyHash="+encodeURIComponent(_publicKeyHash), true);
         xhr.send();
@@ -57,13 +57,13 @@ window.stillepost.chat = (function() {
         var xhr = new XMLHttpRequest();
         xhr.onload = function () {
             var response = JSON.parse(this.responseText);
-            console.log("chat: sendHeartbeat SUCCESS");
+            logToConsole("chat: sendHeartbeat SUCCESS");
             if(typeof(successCallback) !== "undefined")
                 successCallback(response);
         };
         xhr.onerror = function(e) {
-            console.log("chat: sendHeartbeat FAILURE:");
-            console.log(e.target);
+            logToConsole("chat: sendHeartbeat FAILURE:");
+            logToConsole(e.target);
         };
         xhr.open("put", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash)+"?sessionKey="+encodeURIComponent(_sessionKey), true);
         xhr.send();
@@ -82,12 +82,12 @@ window.stillepost.chat = (function() {
         init: function(params, successCallback){
             // read params
             if(typeof(params) !== "object"){
-                console.log("chat: INIT FAILURE - no params");
+                logToConsole("chat: INIT FAILURE - no params");
                 return
             }
             _username = typeof(params.username) !== "string" ? "test" : params.username;
             if(typeof(params.privateKey) === "undefined" || typeof(params.publicKey) ==="undefined"){
-                console.log("chat: INIT FAILURE - no keys");
+                logToConsole("chat: INIT FAILURE - no keys");
             } else {
                 _privateKey = params.privateKey;
                 _publicKey = params.publicKey;
@@ -96,7 +96,7 @@ window.stillepost.chat = (function() {
 
             // set vars
             cu = window.stillepost.cryptoUtils;
-            oi = window.stillepost.onion.interfaces;
+            oi = window.stillepost.interfaces;
             _chainId = oi.getPublicChainInformation().chainId;
             _socket = oi.getPublicChainInformation().socket;
 
@@ -120,7 +120,7 @@ window.stillepost.chat = (function() {
                             _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key, true);
                             _connections[user.hash].onmessage = function(msg){chatObject.onReceiveMessage(msg, user);};
                         }
-                        _connections[user.hash].send(message, function() {console.log('successcallback called');},
+                        _connections[user.hash].send(message, function() {logToConsole('successcallback called');},
                           function() {console.error('errorcallback called');});
                     },
 
@@ -136,7 +136,7 @@ window.stillepost.chat = (function() {
                                     _users = response.data;
                                     chatObject.onUserListUpdate(_users);
                                     if(typeof(_users[publicKeyHash]) === "undefined"){
-                                        console.log("chat: onClientConnected FAILURE no such user registered");
+                                        logToConsole("chat: onClientConnected FAILURE no such user registered");
                                         return;
                                     }
                                     _connections[publicKeyHash] = connection;

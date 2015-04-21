@@ -17,7 +17,7 @@ window.stillepost.onion.messageHandler = (function() {
       cu.unwrapAESKey(message.keyData).then(function (unwrappedKey) {
         return cu.decryptAES(message.chainData, unwrappedKey, str2ab(message.iv), message.commandName).then(function (decData) {
           var decryptedJson = JSON.parse(decData);
-          console.log("Decrypted data: ", decryptedJson);
+          logToConsole("Decrypted data: ", decryptedJson);
           if (decryptedJson.nodeSocket) {
             // send to next socket
             intermediateNode.build(message, decryptedJson, unwrappedKey, remoteAddress, remotePort, webRTCConnection);
@@ -27,7 +27,7 @@ window.stillepost.onion.messageHandler = (function() {
           }
         });
       }).catch(function (err) {
-        console.log("Error decrypting data ", err);
+        logToConsole("Error decrypting data ", err);
         onion.sendError("Error decrypting data on chain node " + onion.localSocket.address + ":" + onion.localSocket.port,
           err, webRTCConnection);
       });
@@ -42,7 +42,7 @@ window.stillepost.onion.messageHandler = (function() {
           intermediateNode.wrapMessage(result.message, result.node, result.webRTCConnection);
         }
       }).catch(function(err) {
-        console.log('Error in updateChainMap while handling build message',err);
+        logToConsole('Error in updateChainMap while handling build message',err);
       });
     }
   };
@@ -55,21 +55,21 @@ window.stillepost.onion.messageHandler = (function() {
       var node = onion.chainMap[message.chainId];
       if (node && node.socket.address) {
         cu.hash(cu.abConcat(node.chainIdOut, node.seqNumWrite)).then(function(digest) {
-          console.log('Forwarding error message to next node '+remoteAddress+":"+remotePort);
+          logToConsole('Forwarding error message to next node '+remoteAddress+":"+remotePort);
           var con = webrtc.createConnection(node.socket.address, node.socket.port);
           return con.send({commandName: onion.commandNames.error, chainId: digest, errorMessage: message.errorMessage}).then(function() {
             onion.closeSingleWebRTCConnection(webRTCConnection);
             delete onion.chainMap[message.chainId];
           });
         }).catch(function(err) {
-          console.log('Error forwarding error: ',err);
+          logToConsole('Error forwarding error: ',err);
         });
       } else if (node) {
-        console.log('Exit node deleting chainMap entry');
+        logToConsole('Exit node deleting chainMap entry');
         delete onion.chainMap[message.chainId];
       } else {
         onion.closeSingleWebRTCConnection(webRTCConnection);
-        console.log("Received error commandMessage without valid chainId from " + remoteAddress + ":" + remotePort , message.errorMessage.message);
+        logToConsole("Received error commandMessage without valid chainId from " + remoteAddress + ":" + remotePort , message.errorMessage.message);
       }
     }
   };
@@ -118,7 +118,7 @@ window.stillepost.onion.messageHandler = (function() {
     var pubEntry = exitNode.exitNodeMap[message.chainId];
     // If pubEntry exists this node is a exit node and received a clientMessage from another exitNode
     if (pubEntry) {
-      console.log('clientMessage: Found exitNodeMap entry', pubEntry);
+      logToConsole('clientMessage: Found exitNodeMap entry', pubEntry);
       exitNode.forwardClientMessage(message, pubEntry, webRTCConnection);
     } else {
       public.message(message, remoteAddress, remotePort, webRTCConnection);
@@ -154,7 +154,7 @@ window.stillepost.onion.messageHandler = (function() {
     if (message && message.commandName) {
       var fn = window.stillepost.onion.messageHandler[message.commandName];
       if (typeof fn === 'function') {
-        console.log("Handle message: ", message);
+        logToConsole("Handle message: ", message);
         fn(message, remoteAddress, remotePort, webRTCConnection);
       } else {
         window.stillepost.onion.messageHandler.message(message, remoteAddress, remotePort, webRTCConnection);

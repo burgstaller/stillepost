@@ -1,17 +1,14 @@
 //params: data,key,iv
 self.onmessage = function(e) {
-  console.log('Enc worker begins to work...');
   var alg = {name: "AES-GCM", iv: e.data.iv};
   if (e.data.additionalData)
     alg.additionalData = convertToAb(e.data.additionalData);
   var buffer = str2ab(e.data.data);
   crypto.subtle.encrypt(alg, e.data.key, buffer).then(function(encData) {
     postMessage({success:true,data:ab2str(encData)});
-    console.log('Enc worker succeeds');
     close();
   }).catch(function(error){
     postMessage({success:false,data:error});
-    console.log('Enc worker fails');
     close();
   });
 };

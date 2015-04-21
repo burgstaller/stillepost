@@ -12,19 +12,19 @@ window.stillepost.signalingChannel = (function() {
   var signalingChannel = new WebSocket(signalingServerURL, 'signaling-protocol');
 
   signalingChannel.onerror = function () {
-    console.log('Signaling channel connection Error - could not connect to WebSocket server');
+    logToConsole('Signaling channel connection Error - could not connect to WebSocket server');
   };
 
   signalingChannel.onopen = function () {
-    console.log('Signaling channel opened');
+    logToConsole('Signaling channel opened');
   };
 
   signalingChannel.onclose = function () {
-    console.log('Signaling channel closed');
+    logToConsole('Signaling channel closed');
   };
 
   signalingChannel.onmessage = function (evt) {
-    console.log("Received signalingChannel message in connection");
+    logToConsole("Received signalingChannel message in connection");
     var message = JSON.parse(evt.data);
     window.stillepost.webrtc.handleSignalingMessage(message);
   };

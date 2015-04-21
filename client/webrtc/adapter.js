@@ -26,7 +26,7 @@ function trace(text) {
   if (text[text.length - 1] === '\n') {
     text = text.substring(0, text.length - 1);
   }
-  console.log((window.performance.now() / 1000).toFixed(3) + ': ' + text);
+  logToConsole((window.performance.now() / 1000).toFixed(3) + ': ' + text);
 }
 
 function maybeFixConfiguration(pcConfig) {
@@ -42,7 +42,7 @@ function maybeFixConfiguration(pcConfig) {
 }
 
 if (navigator.mozGetUserMedia) {
-  console.log('This appears to be Firefox');
+  logToConsole('This appears to be Firefox');
 
   webrtcDetectedBrowser = 'firefox';
 
@@ -123,17 +123,17 @@ if (navigator.mozGetUserMedia) {
 
   // Attach a media stream to an element.
   attachMediaStream = function(element, stream) {
-    console.log('Attaching media stream');
+    logToConsole('Attaching media stream');
     element.mozSrcObject = stream;
   };
 
   reattachMediaStream = function(to, from) {
-    console.log('Reattaching media stream');
+    logToConsole('Reattaching media stream');
     to.mozSrcObject = from.mozSrcObject;
   };
 
 } else if (navigator.webkitGetUserMedia) {
-  console.log('This appears to be Chrome');
+  logToConsole('This appears to be Chrome');
 
   webrtcDetectedBrowser = 'chrome';
   // Temporary fix until crbug/374263 is fixed.
@@ -218,7 +218,7 @@ if (navigator.mozGetUserMedia) {
     } else if (typeof element.src !== 'undefined') {
       element.src = URL.createObjectURL(stream);
     } else {
-      console.log('Error attaching stream to element.');
+      logToConsole('Error attaching stream to element.');
     }
   };
 
@@ -226,5 +226,5 @@ if (navigator.mozGetUserMedia) {
     to.src = from.src;
   };
 } else {
-  console.log('Browser does not appear to be WebRTC-capable');
+  logToConsole('Browser does not appear to be WebRTC-capable');
 }

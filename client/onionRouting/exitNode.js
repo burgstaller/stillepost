@@ -20,7 +20,7 @@ window.stillepost.onion.exitNode = (function() {
   };
 
   public.build = function(message, content, unwrappedKey, remoteAddress, remotePort, webRTCConnection) {
-    console.log("Received build message as exit node ", content);
+    logToConsole("Received build message as exit node ", content);
     content.chainId = str2ab(content.chainId);
     cu.hashArrayObjects([cu.abConcat(content.chainId, 1, onion.linkType.decrypt), cu.abConcat(content.chainId, 1, onion.linkType.encrypt)]).then(function(digestArray) {
 
@@ -48,12 +48,12 @@ window.stillepost.onion.exitNode = (function() {
       return cu.encryptAES(JSON.stringify(content.data), unwrappedKey, iv, message.commandName).then(function (encData) {
         return cu.hash(JSON.stringify({seqNum: 1, chainId: content.chainId, data: encData})).then(function(digest) {
           var command = {commandName: onion.commandNames.build, chainId: digestArray[1], iv: ab2str(iv), chainData: encData, checksum: digest};
-          console.log("Exit node sending ack command: ", command);
+          logToConsole("Exit node sending ack command: ", command);
           return webRTCConnection.send(command);
         });
       });
     }).catch(function (err) {
-      console.log("Error at exit node", err);
+      logToConsole("Error at exit node", err);
       onion.sendError("Error handling data on exit node " + onion.localSocket.address + ":" + onion.localSocket.port,
         err, webRTCConnection, content.chainId, 1, onion.linkType.encrypt);
     });
@@ -62,7 +62,7 @@ window.stillepost.onion.exitNode = (function() {
 
   public.message = function(message, node, webRTCConnection) {
     processMessage(message, node, webRTCConnection, function(data) {
-      console.log("Received message through chain ", data);
+      logToConsole("Received message through chain ", data);
       chunkMessage(data, node, webRTCConnection, message);
     });
   };
@@ -77,7 +77,7 @@ window.stillepost.onion.exitNode = (function() {
       if (workerMessage.data.success) {
         // handle the received message as exit node
         var msg = JSON.parse(workerMessage.data.data);
-        console.log('exit node received msg chunk',msg);
+        logToConsole('exit node received msg chunk',msg);
 
         if (abEqual(str2ab(msg.nonce), node.nonce)) {
           handleChunks(JSON.parse(msg.content), successCallback);
@@ -92,7 +92,7 @@ window.stillepost.onion.exitNode = (function() {
   }
 
   function handleChunks(msg, successCallback) {
-    console.log('handle chunk: ',msg);
+    logToConsole('handle chunk: ',msg);
     if (msg.chunkCount > 1) {
       var msgBuf = messageBuffer[msg.id];
       if (!msgBuf) {
@@ -119,7 +119,7 @@ window.stillepost.onion.exitNode = (function() {
     var messageObject = null,
       message  = JSON.stringify(content),
       messageLength = message.length,
-      chunkSize = window.stillepost.onion.interfaces.config.chunkSize,
+      chunkSize = window.stillepost.interfaces.config.chunkSize,
       msgEncryptionOverheadBytes = 200;
 
     // take account of encryption overhead in comparison
@@ -145,7 +145,7 @@ window.stillepost.onion.exitNode = (function() {
       _activeWebWorkers++;
       var encryptionIV = cu.generateNonce(),
         encWorker = new Worker(onion.worker.encrypt);
-      console.log("Forwarding message through chain ", node, content);
+      logToConsole("Forwarding message through chain ", node, content);
       encWorker.postMessage({iv: encryptionIV, key: node.key, data: JSON.stringify(content), additionalData: messageObj.commandName});
       encWorker.onmessage = function (workerMessage) {
         _activeWebWorkers--;
@@ -160,20 +160,20 @@ window.stillepost.onion.exitNode = (function() {
 
   public.clientMessage = function(message, node, webRTCConnection) {
     processMessage(message, node, webRTCConnection, function (data) {
-      console.log('Decrypted client message data: ', data);
+      logToConsole('Decrypted client message data: ', data);
       // check if this node is the exit node of both chains
       if (data.socket.address === onion.localSocket.address && data.socket.port === onion.localSocket.port) {
         var pubEntry = exitNodeMap[data.chainId];
         if (pubEntry) {
-          console.log('clientMessage: Found exitNodeMap entry', pubEntry);
+          logToConsole('clientMessage: Found exitNodeMap entry', pubEntry);
           public.forwardClientMessage({commandName: message.commandName, chainData: data.message, chainId: data.chainId}, pubEntry, webRTCConnection);
         }
       } else {
-        console.log('Sending clientMessage to remote exit Node');
+        logToConsole('Sending clientMessage to remote exit Node');
         var con = webrtc.createConnection(data.socket.address, data.socket.port);
         con.send({commandName: message.commandName, chainData: data.message, chainId: data.chainId}).catch(function(err) {
-          console.log('Could not connect to remote exit node');
-          console.log(err)
+          logToConsole('Could not connect to remote exit node');
+          logToConsole(err)
         });
       }
     });
@@ -191,7 +191,7 @@ window.stillepost.onion.exitNode = (function() {
           encryptionIV = cu.generateNonce(),
           encWorker = new Worker(onion.worker.encrypt);
 
-        console.log('Close chain at exit node - deleting entry with pubId '+pubChainId);
+        logToConsole('Close chain at exit node - deleting entry with pubId '+pubChainId);
         delete exitNodeMap[pubChainId];
 
         encWorker.postMessage({iv:encryptionIV, key: node.key, data: 'closeAck', additionalData: message.commandName});
@@ -206,14 +206,14 @@ window.stillepost.onion.exitNode = (function() {
     processMessage(message, node, webRTCConnection, function (decryptedRequest) {
 
       decryptedRequest.success = function(data, textStatus, jqXHR) {
-        console.log('ajax success called with status '+textStatus, data);
+        logToConsole('ajax success called with status '+textStatus, data);
         var parsedData = typeof data === 'string' ? data : ab2str(new Uint8Array(data));
         chunkMessage({id: decryptedRequest.id, data: parsedData, textStatus: textStatus, success:true},
           node, webRTCConnection, message);
       };
 
       decryptedRequest.error = function(jqXHR, textStatus, errorThrown) {
-        console.log('ajax error called with status '+textStatus, errorThrown);
+        logToConsole('ajax error called with status '+textStatus, errorThrown);
 
         chunkMessage({id: decryptedRequest.id, errorThrown: errorThrown, textStatus: textStatus,
           success:false}, node, webRTCConnection, message);

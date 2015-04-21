@@ -34,52 +34,52 @@ window.stillepost.webrtc = (function() {
     var connection = null;
     // check if message is part of an already created connection
     if (message.webRTCConnection) {
-      console.log("Received message of connection "+message.webRTCConnection);
+      logToConsole("Received message of connection "+message.webRTCConnection);
       var tmp;
       for (var i = 0; i < connections.length; i++) {
         tmp = connections[i];
         if (tmp.id === message.webRTCConnection) {
-          console.log("Found existing connection "+message.webRTCConnection);
+          logToConsole("Found existing connection "+message.webRTCConnection);
           connection = tmp;
         }
       }
     }
     // handle remotely invoked RTC connection
     if ((message.sdp || message.candidate) && !connection) {
-      console.log("Create new remotely invoked webRTC (ID:"+message.webRTCConnection+")");
+      logToConsole("Create new remotely invoked webRTC (ID:"+message.webRTCConnection+")");
       connection = new WebRTCConnection(message.peerOrigin, message.portOrigin, message.webRTCConnection);
     }
     // handle sdp message
     if (message.sdp) {
-      console.log("Processing sdp message",message.sdp);
+      logToConsole("Processing sdp message",message.sdp);
       connection.pc.setRemoteDescription(new RTCSessionDescription(message.sdp), function () {
         // if we received an offer, we need to answer
         if (connection.pc.remoteDescription.type == 'offer') {
-          console.log("Processed remote description from "+connection._remotePeer+":"+connection._remotePort+"- creating Answer");
+          logToConsole("Processed remote description from "+connection._remotePeer+":"+connection._remotePort+"- creating Answer");
           connection.pc.createAnswer(connection.localDescriptionCreated.bind(connection), logError);
         }
       }, logError);
     }
     // handle candidate message
     else if (message.candidate) {
-      console.log("Processing ice candidate ",message.candidate);
+      logToConsole("Processing ice candidate ",message.candidate);
       connection.pc.addIceCandidate(new RTCIceCandidate(message.candidate));
     }
     // handle websocket init message
     else if (message.peer) {
-      console.log("Successfully established connection to WebSocket Server on local address "+message.peer+":"+message.port);
+      logToConsole("Successfully established connection to WebSocket Server on local address "+message.peer+":"+message.port);
       _localPeer = message.peer;
       _localPort = message.port;
       _resolvePromise({address: _localPeer, port: _localPort});
     } else if (message.error) {
-      console.log("websocket server responded with error "+message.error);
+      logToConsole("websocket server responded with error "+message.error);
       if (connection) {
         connection._connectionError("WebRTC signaling server responded with error "+message.error);
         connection.pc.close();
         removeConnection(connection.id);
       }
     } else {
-      console.log("Signaling channel: Received unsupported message type");
+      logToConsole("Signaling channel: Received unsupported message type");
     }
   };
 
@@ -102,7 +102,7 @@ window.stillepost.webrtc = (function() {
     }
 
     this.localDescriptionCreated = function (desc) {
-      console.log("callback localDescriptionCreated - sending to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
+      logToConsole("callback localDescriptionCreated - sending to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
       this.pc.setLocalDescription(desc, function () {
         window.stillepost.signalingChannel.send(JSON.stringify({
           'peerOrigin': _localPeer,
@@ -116,15 +116,15 @@ window.stillepost.webrtc = (function() {
     };
 
     this.onDataChannelCreated = function(channel) {
-      console.log('onDataChannelCreated:', channel);
+      logToConsole('onDataChannelCreated:', channel);
 
       channel.onopen = function () {
-        console.log('Data channel opened');
+        logToConsole('Data channel opened');
         this._connectionReady();
       }.bind(this);
 
       channel.onerror = function (error) {
-        console.log("Data channel error ", error);
+        logToConsole("Data channel error ", error);
         this._connectionError("WebRTC DataChannel error");
         window.stillepost.onion.onionRouting.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
@@ -134,7 +134,7 @@ window.stillepost.webrtc = (function() {
         if (event.data) {
           var data = JSON.parse(event.data);
           if(data.chunkCount === 1) {
-              console.log("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
+              logToConsole("Received message from " + this._remotePeer + ":" + this._remotePort + " message: ", data);
               window.stillepost.onion.messageHandler.handleMessage(JSON.parse(data.msg), this._remotePeer, this._remotePort, this);
           }
           else{
@@ -161,19 +161,19 @@ window.stillepost.webrtc = (function() {
       }.bind(this);
 
       channel.onclose = function() {
-        console.log("data channel close");
+        logToConsole("data channel close");
         this._connectionError("WebRTC DataChannel was closed");
         window.stillepost.onion.onionRouting.peerDisconnected(this._remotePeer, this._remotePort);
         removeConnection(this.id);
       }.bind(this);
     };
 
-    console.log("Start RTCPeerConnection");
+    logToConsole("Start RTCPeerConnection");
     this.pc = new RTCPeerConnection(iceServers);
 
     // send any ice candidates to the other peer
     this.pc.onicecandidate = function (evt) {
-      console.log("onicecandidate triggered - sending candidate to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
+      logToConsole("onicecandidate triggered - sending candidate to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
       if (evt.candidate)
         window.stillepost.signalingChannel.send(JSON.stringify({
           'peerOrigin': _localPeer,
@@ -187,19 +187,19 @@ window.stillepost.webrtc = (function() {
 
     // let the 'negotiationneeded' event trigger offer generation
     this.pc.onnegotiationneeded = function () {
-      console.log("event  onnegotiationneeded");
+      logToConsole("event  onnegotiationneeded");
       this.pc.createOffer(this.localDescriptionCreated.bind(this), logError, mediaConstraints);
     }.bind(this);
 
     this.pc.ondatachannel = function (event) {
-      console.log('ondatachannel event triggered ', event.channel);
+      logToConsole('ondatachannel event triggered ', event.channel);
       this._dataChannel = event.channel;
       this.onDataChannelCreated(this._dataChannel);
     }.bind(this);
 
     this.pc.oniceconnectionstatechange = function() {
       if (this.pc.iceConnectionState === 'disconnected') {
-        console.log("current iceConnectionState: ",this.pc.iceConnectionState);
+        logToConsole("current iceConnectionState: ",this.pc.iceConnectionState);
       }
     }.bind(this);
 
@@ -223,7 +223,7 @@ window.stillepost.webrtc = (function() {
       } else {
           var message = JSON.stringify(data),
               messageLength = message.length,
-              chunkSize = window.stillepost.onion.interfaces.config.chunkSize; //15KB
+              chunkSize = window.stillepost.interfaces.config.chunkSize; //15KB
 
           if(messageLength > chunkSize){
             var chunkCount = Math.ceil(messageLength / chunkSize),
@@ -263,13 +263,14 @@ window.stillepost.webrtc = (function() {
   }
 
   function createPadding(length){
-      var padding = "",
-          symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-      for(var i = 0; i < length; i++){
-          padding += symbols.charAt(Math.floor(Math.random() * symbols.length));
-      }
-      return padding;
+//      var padding = "",
+//          symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+//
+//      for(var i = 0; i < length; i++){
+//          padding += symbols.charAt(Math.floor(Math.random() * symbols.length));
+//      }
+//      return padding;
+      return "";
   }
 
   function removeConnection(connectionId) {
@@ -277,7 +278,7 @@ window.stillepost.webrtc = (function() {
     for (var i = 0; i < connections.length; i++) {
       tmp = connections[i];
       if (tmp.id === connectionId) {
-        console.log("Removing webrtc connection "+connectionId);
+        logToConsole("Removing webrtc connection "+connectionId);
         connections.splice(i,1);
       }
     }
@@ -291,7 +292,7 @@ window.stillepost.webrtc = (function() {
         parsedPort = parseInt(port);
       }
       catch(err) {
-        console.log("Error while parsing parameter port of type string to int type");
+        logToConsole("Error while parsing parameter port of type string to int type");
       }
     }
 
@@ -315,7 +316,7 @@ window.stillepost.webrtc = (function() {
   };
 
   function logError(error) {
-    console.log("error: ",error);
+    logToConsole("error: ",error);
   }
 
   // cleanup when browser or tab is closed

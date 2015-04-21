@@ -16,7 +16,7 @@ window.stillepost.chatUI = (function(){
 
     function init(){
         // vars
-        oi = window.stillepost.onion.interfaces;
+        oi = window.stillepost.interfaces;
         chat = window.stillepost.chat;
         cu = window.stillepost.cryptoUtils;
     }
@@ -42,7 +42,24 @@ window.stillepost.chatUI = (function(){
             $('#chatTextArea' + event.data.chatId).append(msg);
             $('#messageTextArea' + event.data.chatId).val('');
         }
-        _chatObject.sendMessage(_usermap[event.data.chatId], input);
+//        var xhr = new XMLHttpRequest();
+//        xhr.open('GET', 'test1.pdf', true);
+//        xhr.responseType = 'blob';
+//        var chatid = event.data.chatId;
+//
+//        xhr.onload = function(e) {
+//            if (this.status == 200) {
+//                var reader = new window.FileReader();
+//                reader.readAsDataURL(this.response);
+//                reader.onload = function(event) {
+//                    _chatObject.sendMessage(_usermap[chatid],event.target.result);
+//                };
+//            }
+//        };
+//
+//        xhr.send();
+
+      _chatObject.sendMessage(_usermap[event.data.chatId], input);
     }
 
     // TODO implement incremental updates

@@ -19,6 +19,7 @@ window.stillepost.onion.onionRouting = (function() {
     // current amount of tries to create a chain
     _curCreateChainTryCount = 0,
     _localSocket = {},
+    _heartBeat = null,
 
   //Id of the chain in which this node is the master
   chainIdMaster = null,
@@ -124,9 +125,9 @@ window.stillepost.onion.onionRouting = (function() {
    *    - Address, Port ... our local public socket information
    *    - Public key ... the generated public key, which is valid for the current session
    */
-  initOnionSetup = function() {
+   initOnionSetup = function() {
     cu.getGeneratedPublicKey().then(function(pubKey) {
-      console.log("Generated pubKey: "+pubKey);
+      logToConsole("Generated pubKey: "+pubKey);
       // webrtc.connected is a Promise which is resolved upon successfully establishing a connection to the websocket server.
       // The Promise passes information about our local public socket, which we send along with the public key to the directory-server.
       webrtc.connected.then(function(local)
@@ -137,21 +138,21 @@ window.stillepost.onion.onionRouting = (function() {
         entry.key = pubKey;
         var registerAtDirectory = function()
         {
-          console.log("Registering at directory server as ", entry);
+          logToConsole("Registering at directory server as ", entry);
           var xhr = new XMLHttpRequest();
           xhr.onload = function () {
             var response = JSON.parse(this.responseText);
-            console.log("Directory server responded register request with: ", response);
+            logToConsole("Directory server responded register request with: ", response);
             if (response.msg === "OK") {
               _uuid = response.data;
-              console.log("Successfully registered at directory server with uuid " + response.data);
-              setInterval(sendHeartbeat, stillepost.onion.interfaces.config.heartbeatInterval)
+              logToConsole("Successfully registered at directory server with uuid " + response.data);
+              _heartBeat = setInterval(sendHeartbeat, stillepost.interfaces.config.heartbeatInterval);
             } else
               public.onerror(errorTypes.chainError, {message: "Directory-Server did not respond with OK while registering, but with: "+response.msg})
           };
           xhr.onerror = function (e) {
-            console.log("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
-            if (_curDirectoryTryCount < stillepost.onion.interfaces.config.maxDirectoryTryCount)
+            logToConsole("Try: " + (++_curDirectoryTryCount) + ": Failed to register at directory server", e.target);
+            if (_curDirectoryTryCount < stillepost.interfaces.config.maxDirectoryTryCount)
               registerAtDirectory();
             else
               public.onerror(errorTypes.chainError, {message: 'Could not connect to directory server', error: e.target});
@@ -171,7 +172,7 @@ window.stillepost.onion.onionRouting = (function() {
       var xhr = new XMLHttpRequest();
       xhr.onload = function () {
           var response = JSON.parse(this.responseText);
-          console.log("onion: sendHeartbeat SUCCESS");
+          logToConsole("onion: sendHeartbeat SUCCESS");
       };
       xhr.onerror = function(e) {
           public.onerror(errorTypes.chainError, {message: 'Directory server sendHeartbeat FAILURE', error: e.target})
@@ -226,8 +227,8 @@ window.stillepost.onion.onionRouting = (function() {
         var msg = JSON.parse(this.responseText);
         if (msg.msg === "OK") {
           var nodeList = msg.data;
-          console.log("Received nodelist of length: "+nodeList.length);
-          console.log(nodeList);
+          logToConsole("Received nodelist of length: "+nodeList.length);
+          logToConsole(nodeList);
           try {
             nodeList = chooseNodes(nodeList);
             resolve(nodeList);
@@ -258,7 +259,7 @@ window.stillepost.onion.onionRouting = (function() {
           parsedPubKey = JSON.parse(pubKey);
         return cu.wrapAESKey(key, parsedPubKey).then(function(keyData) {
           var iv = cu.generateNonce();
-          console.log("encrypting data: "+dataToEncrypt);
+          logToConsole("encrypting data: "+dataToEncrypt);
           return cu.encryptAES(dataToEncrypt, key, iv, commandNames.build).then(function(encData) {
             return {keyData: keyData, chainData:encData, iv:ab2str(iv)};
           });
@@ -309,10 +310,10 @@ window.stillepost.onion.onionRouting = (function() {
       if (nodes.length < chainSize) {
         throw "Retrieved node count less than the required chainSize";
       }
-      console.log("Nodes: ",nodes);
+      logToConsole("Nodes: ",nodes);
       //generate new AES-keys
       return cu.getGeneratedAESKeys(chainSize).then(function(keys) {
-        console.log("AES-keys: ", keys);
+        logToConsole("AES-keys: ", keys);
         masterChain = keys;
 
         var chainIds = [], i;
@@ -333,7 +334,7 @@ window.stillepost.onion.onionRouting = (function() {
             _entryNodeSocket = nodes[chainSize-1].socket;
             _exitNodeSocket = nodes[0].socket;
             var command = {commandName: commandNames.build, keyData: data.keyData, chainData: data.chainData, iv: data.iv};
-            console.log("created command: ", command);
+            logToConsole("created command: ", command);
 
             var con = new webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
               promise = new Promise(function(resolve,reject) {
@@ -343,7 +344,7 @@ window.stillepost.onion.onionRouting = (function() {
                   if (!_isMasterChainCreated) {
                     reject("Create chain Timeout reached");
                   }
-                }, stillepost.onion.interfaces.config.createChainTimeout);
+                }, stillepost.interfaces.config.createChainTimeout);
               });
             con.send(command).catch(function(err) {
               _masterChainError(err);
@@ -379,7 +380,7 @@ window.stillepost.onion.onionRouting = (function() {
     var messageObject = null,
       message  = JSON.stringify(message),
       messageLength = message.length,
-      chunkSize = window.stillepost.onion.interfaces.config.chunkSize,
+      chunkSize = window.stillepost.interfaces.config.chunkSize,
       msgEncryptionOverheadBytes = 200;
 
     // take account of encryption overhead in comparison
@@ -412,7 +413,7 @@ window.stillepost.onion.onionRouting = (function() {
             var con = webrtc.createConnection(_entryNodeSocket.address, _entryNodeSocket.port),
               msg = {commandName: commandName, chainData: encData, iv: ab2str(iv), chainId: digestArray[0], checksum: digestArray[1]};
             return con.send(msg).then(function() {
-              console.log("Successfully sent message to entry node ",msg);
+              logToConsole("Successfully sent message to entry node ",msg);
             });
           });
         })
@@ -441,9 +442,9 @@ window.stillepost.onion.onionRouting = (function() {
     build: function(message) {
       return unwrapMessage(message).then(function(decData) {
         var data = JSON.parse(decData);
-        console.log("Received message from exit node: ", data);
+        logToConsole("Received message from exit node: ", data);
         if (abEqual(str2ab(data.nonce), _masterChainNonce)) {
-          console.log('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
+          logToConsole('Successfully build chain with public information: ', _exitNodeSocket, data.pubChainId);
           _pubChainId = data.pubChainId;
           _chainNonce = str2ab(data.chainNonce);
           _masterChainCreated();
@@ -469,7 +470,7 @@ window.stillepost.onion.onionRouting = (function() {
      */
     message: function(message) {
       return unwrapMessage(message).then(function (decData) {
-        handleChunks(JSON.parse(decData), function(data) {console.log(data);});
+        handleChunks(JSON.parse(decData), function(data) {logToConsole(data);});
       }).catch(function(err) {
         public.onerror(errorTypes.messageError, {message: 'error decrypting data', error: err});
       });
@@ -488,7 +489,7 @@ window.stillepost.onion.onionRouting = (function() {
     },
 
     error: function(message, webRTCConnection) {
-      console.log("Received error commandMessage - destroying chain ",message.errorMessage);
+      logToConsole("Received error commandMessage - destroying chain ",message.errorMessage);
       _masterChainError(message.errorMessage.message);
       if (_isMasterChainCreated) {
         _curCreateChainTryCount = 1;
@@ -524,7 +525,7 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   function handleChunks(msg, successCallback) {
-    console.log('handle chunk: ',msg);
+    logToConsole('handle chunk: ',msg);
     if (msg.chunkCount > 1) {
       var msgBuf = _messageBuffer[msg.id];
       if (!msgBuf) {
@@ -541,7 +542,7 @@ window.stillepost.onion.onionRouting = (function() {
           var assembledMsg = msgBuf.buffer.join('');
           successCallback(JSON.parse(assembledMsg));
         }
-        console.log('current chunk count: ',msgBuf.chunkCount);
+        logToConsole('current chunk count: ',msgBuf.chunkCount);
       }
     } else if (msg.chunkCount === 1 && successCallback) {
       successCallback(JSON.parse(msg.msg));
@@ -549,7 +550,7 @@ window.stillepost.onion.onionRouting = (function() {
   }
 
   function sendError(errorMessage, errorObj, connection, chainId, seqNumWrite, mode) {
-    console.log(errorMessage, errorObj, connection, chainId);
+    logToConsole(errorMessage, errorObj, connection, chainId);
     if (chainId && seqNumWrite) {
       return cu.hash(cu.abConcat(chainId, seqNumWrite, linkType.getLinkTypeEncryptDefault(mode))).then(function(digest) {
         var errorMsg = {
@@ -562,7 +563,7 @@ window.stillepost.onion.onionRouting = (function() {
         };
         return connection.send(errorMsg);
       }).catch(function(err) {
-        console.log('Caught error in sendError',err);
+        logToConsole('Caught error in sendError',err);
         closeSingleWebRTCConnection(connection);
       });
     } else {
@@ -592,7 +593,7 @@ window.stillepost.onion.onionRouting = (function() {
       if (workerMessage.data.success) {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
         var command = {commandName: message.commandName, chainId: digestArray[0], iv: ab2str(iv), chainData: workerMessage.data.data, checksum: digestArray[1]};
-        console.log('Sending command to next node',command);
+        logToConsole('Sending command to next node',command);
         return con.send(command);
       } else {
         con = webrtc.createConnection(node.socket.address, node.socket.port);
@@ -601,7 +602,7 @@ window.stillepost.onion.onionRouting = (function() {
       }
     }).catch(function (error){
       //error callback for hash operation
-      console.log('Error in encWorkerListener: ', error);
+      logToConsole('Error in encWorkerListener: ', error);
       closeSingleWebRTCConnection(webRTCConnection);
     });
   }
@@ -625,31 +626,31 @@ window.stillepost.onion.onionRouting = (function() {
         _createChainPromise = createChain();
       }
       return _createChainPromise.then(function () {
-        console.log("created Chain");
+        logToConsole("created Chain");
         _isMasterChainCreated = true;
         return sendChainMessage(commandName, message);
       }).catch(function(err) {
-        console.log('sendMessage createChain error recovery',err);
+        logToConsole('sendMessage createChain error recovery',err);
         chainErrorRecovery(err, wrapFunction(sendMessage,this,[commandName, message]));
       });
     } else {
       // send message over chain
       return sendChainMessage(commandName, message).catch(function(err) {
-        console.log('sendMessage createChain error recovery',err);
+        logToConsole('sendMessage createChain error recovery',err);
         chainErrorRecovery(err, wrapFunction(sendMessage,this,[commandName, message]));
       });
     }
   }
 
   function chainErrorRecovery(err, callback) {
-    console.log("error creating chain: ",err);
+    logToConsole("error creating chain: ",err);
     public.onerror(errorTypes.buildError, {message: 'Error while creating chain', error: err});
 
     resetMasterChain();
-    if (_curCreateChainTryCount++ < stillepost.onion.interfaces.config.maxCreateChainTryCount) {
+    if (_curCreateChainTryCount++ < stillepost.interfaces.config.maxCreateChainTryCount) {
       var delay = (_curCreateChainTryCount^2) * 100,
         callbackFunction = callback ? callback : public.createChain;
-      delay = delay > stillepost.onion.interfaces.config.maxCreateChainInterval ? stillepost.onion.interfaces.config.maxCreateChainInterval : delay;
+      delay = delay > stillepost.interfaces.config.maxCreateChainInterval ? stillepost.interfaces.config.maxCreateChainInterval : delay;
       setTimeout(wrapFunction(function(callbackFunction) {
           callbackFunction();
       }, this, [callbackFunction]), delay);
@@ -671,11 +672,11 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.onerror = function(type, errorThrown) {
-    stillepost.onion.interfaces.onionlayer.onerror(type, errorThrown);
+    stillepost.interfaces.onionlayer.onerror(type, errorThrown);
   };
 
   public.onnotification = function(type, notification) {
-    stillepost.onion.interfaces.onionlayer.onnotification(type, notification);
+    stillepost.interfaces.onionlayer.onnotification(type, notification);
   };
 
   public.init = function() {
@@ -684,6 +685,7 @@ window.stillepost.onion.onionRouting = (function() {
     exitNode = window.stillepost.onion.exitNode;
     intermediateNode = window.stillepost.onion.intermediateNode;
     clientConnection = window.stillepost.onion.clientConnection;
+    initOnionSetup();
   };
 
   public.getNodeConnectionCount = function(remoteAddress, remotePort) {
@@ -708,7 +710,7 @@ window.stillepost.onion.onionRouting = (function() {
   public.closeSingleWebRTCConnection = closeSingleWebRTCConnection;
 
   public.peerDisconnected = function(remoteAddress, remotePort) {
-    console.log("peer disconnected");
+    logToConsole("peer disconnected");
     if (_entryNodeSocket && _entryNodeSocket.address === remoteAddress && _entryNodeSocket.port === remotePort) {
       if (_isMasterChainCreated) {
         public.onerror(errorTypes.nodeError, {message: 'Entry node disconnected'});
@@ -725,9 +727,9 @@ window.stillepost.onion.onionRouting = (function() {
           if (chainMap.hasOwnProperty(innerKey) && chainMap[key] && chainMap[innerKey].chainIdIn == chainMap[key].chainIdOut) {
             var mapEntry = chainMap[innerKey],
               con = webrtc.createConnection(mapEntry.socket.address, mapEntry.socket.port);
-            console.log("Propagating peer disconnected error message to next node ",mapEntry);
+            logToConsole("Propagating peer disconnected error message to next node ",mapEntry);
               sendError("Connection closed", null, con, mapEntry.chainIdOut, mapEntry.seqNumWrite, mapEntry.type).catch(function(err) {
-                console.log('Could not propagate error message',err);
+                logToConsole('Could not propagate error message',err);
               });
             delete chainMap[innerKey];
           }
@@ -738,7 +740,7 @@ window.stillepost.onion.onionRouting = (function() {
   };
 
   public.closeChain = function() {
-    console.log('Onion layer close chain called - reseting chain information and sending close message');
+    logToConsole('Onion layer close chain called - reseting chain information and sending close message');
     if (_isMasterChainCreated) {
       return sendMessage(commandNames.close, _pubChainId).then(function() {
         resetMasterChain();
@@ -753,7 +755,7 @@ window.stillepost.onion.onionRouting = (function() {
     xhr.onload = function () {
       var response = JSON.parse(this.responseText);
       if (response.msg === "OK") {
-        console.log("Successfully logged out from directory server");
+        logToConsole("Successfully logged out from directory server");
       }
     };
     xhr.onerror = function(e) {
@@ -761,6 +763,7 @@ window.stillepost.onion.onionRouting = (function() {
     };
     xhr.open("post", directoryServerUrl + "/logout", true);
     xhr.send(JSON.stringify(message));
+    clearInterval(_heartBeat);
   };
 
   public.aajax = function(request) {
@@ -798,7 +801,7 @@ window.stillepost.onion.onionRouting = (function() {
           obj.error(null, 'timeout', 'Request timed out.');
           reject({message: 'Request timed out.', type: 'timeout'});
         }
-      }, stillepost.onion.interfaces.config.aFileDownTimeout);
+      }, stillepost.interfaces.config.aFileDownTimeout);
     });
   };
 
@@ -828,8 +831,6 @@ window.stillepost.onion.onionRouting = (function() {
   public.sendMessage = function(messageType, message) {
     return sendMessage(messageType, message);
   };
-
-  initOnionSetup();
 
   return public;
 })();
