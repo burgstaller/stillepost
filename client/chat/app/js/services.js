@@ -132,7 +132,7 @@ chatServices.factory('ChatServer', ['$resource',
 
               // set vars
               cu = window.stillepost.cryptoUtils;
-              oi = window.stillepost.onion.interfaces;
+              oi = window.stillepost.interfaces;
               _chainId = oi.getPublicChainInformation().chainId;
               _socket = oi.getPublicChainInformation().socket;
 

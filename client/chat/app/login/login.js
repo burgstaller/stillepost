@@ -11,7 +11,7 @@ angular.module('chat.login', ['ngRoute'])
 
 .controller('ChatLoginCtrl', ['$scope', '$location', 'ChatServer', function($scope, $location, ChatServer) {
 
-  var oi = window.stillepost.onion.interfaces,
+  var oi = window.stillepost.interfaces,
   chat = window.stillepost.chat,
   cu = window.stillepost.cryptoUtils,
   _publicKey = null,
