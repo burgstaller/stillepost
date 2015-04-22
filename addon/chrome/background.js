@@ -14,7 +14,7 @@ chrome.browserAction.onClicked.addListener(function() {
            backgroundPage.stillepost.interfaces.initNode();
        }
        else{
-           backgroundPage.stillepost.interfaces.turnOff();
+           backgroundPage.stillepost.interfaces.close();
        }
     });
 });

@@ -104,7 +104,7 @@ window.stillepost.webrtc = (function() {
     this.localDescriptionCreated = function (desc) {
       logToConsole("callback localDescriptionCreated - sending to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
       this.pc.setLocalDescription(desc, function () {
-        window.stillepost.signalingChannel.send(JSON.stringify({
+        window.stillepost.signalingChannel.websocket.send(JSON.stringify({
           'peerOrigin': _localPeer,
           'portOrigin': _localPort,
           'peer': this._remotePeer,
@@ -175,7 +175,7 @@ window.stillepost.webrtc = (function() {
     this.pc.onicecandidate = function (evt) {
       logToConsole("onicecandidate triggered - sending candidate to "+this._remotePeer+":"+this._remotePort+" conn_id("+this.id+")");
       if (evt.candidate)
-        window.stillepost.signalingChannel.send(JSON.stringify({
+        window.stillepost.signalingChannel.websocket.send(JSON.stringify({
           'peerOrigin': _localPeer,
           'portOrigin': _localPort,
           'peer':this._remotePeer,
@@ -319,16 +319,13 @@ window.stillepost.webrtc = (function() {
     logToConsole("error: ",error);
   }
 
-  // cleanup when browser or tab is closed
-  var _beforeUnload = window.onbeforeunload;
-  window.onbeforeunload = function() {
+  // cleanup
+  public.cleanUp = function() {
     var conn = null;
     for (var i=0; i < connections.length; i++) {
       conn = connections[i];
       conn.close();
     }
-    if (_beforeUnload)
-      _beforeUnload();
   };
 
   return public;

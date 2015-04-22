@@ -53,6 +53,7 @@ window.stillepost.interfaces = (function () {
         intermediateNode.init();
         clientConnection.init();
         messageHandler.init();
+        window.stillepost.signalingChannel.init();
     };
 
     /**
@@ -67,13 +68,16 @@ window.stillepost.interfaces = (function () {
         exitNode.init();
         intermediateNode.init();
         messageHandler.init();
+        window.stillepost.signalingChannel.init();
     };
 
     /**
-     * Turn off Node
+     * Close Node
      */
-    public.turnOff = function(){
+    public.close = function(){
         onion.cleanUp();
+        window.stillepost.webrtc.cleanUp();
+        window.stillepost.signalingChannel.close();
     };
 
     /**
