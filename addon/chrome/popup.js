@@ -40,6 +40,7 @@ window.onload = function(){
         else{
             showOff();
         }
+        document.getElementById("directoryurl").value = backgroundPage.stillepost.interfaces.config.directoryServerUrl;
     });
 };
 
