@@ -2,19 +2,54 @@
 
   <div class="col-md-8">
     <div ng-if="activeChat()">
-      <h2>Currently Chatting with {{currentChat.user.username}}</h2>
-      <div class="messageContainer"  ng-class="{'ownMsg': m.username === username,'partnerMsg' : m.username !== username }" ng-repeat="m in currentChat.messages">
-        ({{m.timestamp | date:"MM/dd/yyyy hh:mm:ss"}}) <b>{{m.username}}</b>: {{m.message}}
-      </div>
-      <form ng-submit="sendMessage()">
-        <div>
-          <input type="text" ng-model="currentChat.messageText" placeholder="Type your message" />
 
-        <span>
-            <button type="submit">Send</button>
-        </span>
+      <h2>Currently Chatting with {{currentChat.user.username}}<span ng-if="currentChat.user.verified" class="verifiedIndicator"> - Verified</span></h2>
+
+      <div class="conversationContainer">
+        <div class="messageContainer"  ng-class="{'ownMsg': m.username === username,'partnerMsg' : m.username !== username }" ng-repeat="m in currentChat.messages">
+          ({{m.timestamp | date:"MM/dd/yyyy hh:mm:ss"}}) <b>{{m.username}}</b>: {{m.message}}
         </div>
-      </form>
+
+        <form ng-submit="sendMessage()">
+          <div class="input-group">
+            <input type="text" ng-model="currentChat.messageText" class="form-control" placeholder="Type your message" />
+            <span class="input-group-btn">
+              <button type="submit" class="btn btn-default">Send</button>
+            </span>
+          </div>
+        </form>
+
+      </div>
+
+      <div class="partnerKeySection">
+        <label>
+          <input type="checkbox" ng-model="showpubkey">
+          Show public key information
+        </label>
+        <div ng-if="showpubkey">
+          <dl>
+            <dt>alg</dt>
+            <dd>{{currentChat.keyInfo.alg}}</dd>
+            <dt>e</dt>
+            <dd>{{currentChat.keyInfo.e}}</dd>
+            <dt>ext</dt>
+            <dd>{{currentChat.keyInfo.ext}}</dd>
+            <dt>key-ops</dt>
+            <dd>{{currentChat.keyInfo.key_ops}}</dd>
+            <dt>kty</dt>
+            <dd>{{currentChat.keyInfo.kty}}</dd>
+            <dt>n</dt>
+            <dd>{{currentChat.keyInfo.n}}</dd>
+          </dl>
+          <div class="input-group">
+            <input type="text" ng-model="verifyKey" class="form-control" placeholder="Key to compare with" />
+                <span class="input-group-btn">
+                  <button type="button" ng-click="verify(currentChat.user, verifyKey)" class="btn btn-default">Verify equality</button>
+                </span>
+          </div>
+        </div>
+      </div>
+
     </div>
     <div ng-if="!activeChat()">
       <h2>No active chat</h2>
@@ -22,13 +57,26 @@
   </div>
   <div class="col-md-4">
     <h3>Logged in users</h3>
-    <input class="btn btn-default btn-xs" type="button" ng-click="refreshUsers()" value="Refresh">
+
     <ul class="list-unstyled">
       <li ng-repeat="user in users">
-        <input class="btn btn-default" type="button" ng-click="openChat(user)" value="{{user.username}}">
+        <div class="userentry" ng-class="activeUser(user) ? 'active': ''" ng-click="openChat(user)">{{user.username}}
         <span class="userUnreadMsgs" ng-if="unreadMsgs(user)">{{user.unreadMsgs}}</span>
+        </div>
       </li>
     </ul>
+    <input class="btn btn-default btn-xs" type="button" ng-click="refreshUsers()" value="Refresh">
+    <br />
+    <label>
+      <input type="checkbox" ng-model="showKeyPair">
+      Export own key pair
+      <div ng-if="showKeyPair">
+        <b>Public Key</b>
+        <pre>{{publicKey}}</pre>
+        <b>Private Key</b>
+        <pre>{{privateKey}}</pre>
+      </div>
+    </label>
   </div>
 
 </div>

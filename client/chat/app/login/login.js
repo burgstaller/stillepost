@@ -19,48 +19,42 @@ angular.module('chat.login', ['ngRoute'])
   _chatObject = null,
   _usermap = null;
 
-  /*
-   testing code
-   TODO allow user to specify own keypair + method for extraction
-   */
   cu.getGeneratedRSAKeyPair().then(function(keys) {
     _publicKey = keys.publicKey;
     _privateKey = keys.privateKey;
   });
 
-
-  function updateUserList(users){
-    _usermap = [];
-    var id = -1;
-    for(var user in users){
-      id++;
-      _usermap[id] = users[user];
-      _usermap[id].hash = user;
-    }
-  }
-
   $scope.login = function(){
     var params = {};
     params.username = $scope.username;
-    params.publicKey = _publicKey;
-    params.privateKey = _privateKey;
-    oi.buildChain().then(function(){
-      //chat.init(params, function(chatObject){
-      ChatServer.init(params, function(chatObject){
-        /*
-        _chatObject = chatObject;
-        //_chatObject.onUserListUpdate = updateUserList;
-        _chatObject.onUserListUpdate = function(){};
-        //_chatObject.onReceiveMessage = receiveMessage;
-        _chatObject.onReceiveMessage = function(){};
-        //_chatObject.onClientConnected
-        _chatObject.updateUserList();
-        */
-        console.log("switching to home");
-        $location.path("home");
-        $scope.$apply();
+
+    // user specified his own keys
+    if(typeof($scope.privateKey) !== "undefined" && typeof($scope.publicKey) !== "undefined" ){
+      params.publicKey = $scope.publicKey;
+      crypto.subtle.importKey("jwk", JSON.parse($scope.privateKey), cu.rsaAlgorithm, true, ["decrypt", "unwrapKey"]).then(function(impKey) {
+        params.privateKey = impKey;
+        oi.buildChain().then(function(){
+          ChatServer.init(params, function(chatObject){
+            console.log("switching to home");
+            $location.path("home");
+            $scope.$apply();
+          });
+        });
       });
-    });
+    }else{
+      // use genereated keys
+      params.publicKey = _publicKey;
+      params.privateKey = _privateKey;
+      oi.buildChain().then(function(){
+        ChatServer.init(params, function(chatObject){
+          console.log("switching to home");
+          $location.path("home");
+          $scope.$apply();
+        });
+      });
+    }
+
+
   };
 
 }]);

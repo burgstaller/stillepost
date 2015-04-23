@@ -115,6 +115,14 @@ chatServices.factory('ChatServer', ['$resource',
             return _username;
           },
 
+          getPublicKey: function(){
+              return _publicKey;
+          },
+
+          getPrivateKey: function(){
+              return _privateKey
+          },
+
           init: function(params, successCallback){
               // read params
               if(typeof(params) !== "object"){

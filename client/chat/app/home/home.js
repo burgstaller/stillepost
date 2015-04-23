@@ -14,7 +14,11 @@ angular.module('chat.home', ['ngRoute'])
       _placeholder = "type message";
   $scope.users = ChatServer.getUsers();
   $scope.username = ChatServer.getUsername();
-
+  $scope.publicKey = ChatServer.getPublicKey();
+  $scope.privateKey = "";
+  crypto.subtle.exportKey("jwk", ChatServer.getPrivateKey()).then(function (exportKey) {
+    $scope.privateKey = JSON.stringify(exportKey);
+  });
   $scope.currentChat = {
     messages:[],
     messageText: _placeholder
@@ -36,14 +40,15 @@ angular.module('chat.home', ['ngRoute'])
     $scope.currentChat = {
       user: user,
       messages: _chatHistory[user.hash],
-      messageText: ""
+      messageText: "",
+      keyInfo: JSON.parse(user.key)
     };
     user.unreadMsgs = 0;
   };
 
   _chatObject.onReceiveMessage = function(msg, user){
     _chatHistory[user.hash] = typeof(_chatHistory[user.hash]) === "undefined" ? []: _chatHistory[user.hash];
-    if($scope.currentChat.user.hash !== user.hash) {
+    if(typeof($scope.currentChat.user) === "undefined" || $scope.currentChat.user.hash !== user.hash) {
       user.unreadMsgs = typeof(user.unreadMsgs) === "undefined" ? 1 : user.unreadMsgs+1;
     }
     _chatHistory[user.hash].push({
@@ -57,7 +62,7 @@ angular.module('chat.home', ['ngRoute'])
 
   };
   _chatObject.onUserListUpdate = function(users){
-    console.log("UPDATED userlist");
+    //console.log("UPDATED userlist");
   };
 
 
@@ -74,6 +79,12 @@ angular.module('chat.home', ['ngRoute'])
   };
   $scope.unreadMsgs = function(user){
     return typeof(user.unreadMsgs) !== 'undefined' && user.unreadMsgs > 0;
+  };
+  $scope.activeUser = function(user){
+    return typeof($scope.currentChat.user) !== 'undefined' && $scope.currentChat.user.hash === user.hash;
+  };
+  $scope.verify = function(user, verifyKey){
+    user.verified = user.key === verifyKey;
   };
 
 }]);

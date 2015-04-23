@@ -5,6 +5,9 @@
     border:1px solid black;
     padding: 2px;
     border-radius:5px;
+    display: inline-block;
+    min-width:20px;
+    text-align: center;
 }
 
 .messageContainer{
@@ -18,4 +21,37 @@
 }
 .messageContainer.partnerMsg{
     background-color: rgba(30, 30, 255, .6);
+}
+.userentry{
+    padding:3px;
+    margin: 1px 0 1px 0;
+    border: 1px solid black;
+    width: 120px;
+    text-align: center;
+    background-color: rgba(200, 200, 200, 0.5);
+    cursor: pointer;
+}
+.userentry.active,
+.userentry:hover{
+    background-color: rgba(130, 130, 130, 0.5);
+    font-weight: bold;
+
+}
+dd{
+    word-break: break-all;
+}
+.verifiedIndicator{
+    color: rgba(20, 140, 20, 1);
+}
+.partnerKeySection{
+    margin: 20px 0 0 0;
+    padding: 10px;
+    border: 1px solid black;
+    border-radius: 15px;
+}
+
+.conversationContainer{
+    padding:4px;
+    margin: 20px 0 10px 0;
+    background-color: rgba(230, 230, 230, 0.4);
 }

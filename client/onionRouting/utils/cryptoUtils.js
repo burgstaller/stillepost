@@ -6,6 +6,7 @@ window.stillepost.cryptoUtils = (function() {
 	var aesAlgorithm = {name: "AES-GCM", length: 256};
 	var pubExp = new Uint8Array([1, 0, 1]);
 	var rsaAlgorithm = {name: "RSA-OAEP", modulusLength: 2048, publicExponent: pubExp, hash: {name: "SHA-256"}};
+	public.rsaAlgorithm = rsaAlgorithm;
 	var keyFormat = "jwk";
 	var privateRSAKey = null;
 
