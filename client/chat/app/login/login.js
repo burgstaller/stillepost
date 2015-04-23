@@ -19,6 +19,12 @@ angular.module('chat.login', ['ngRoute'])
   _chatObject = null,
   _usermap = null;
 
+  $scope.loginEnabled = false;
+  document.addEventListener("chainReady", function() {
+    $scope.loginEnabled = true;
+    $scope.$apply();
+  });
+
   cu.getGeneratedRSAKeyPair().then(function(keys) {
     _publicKey = keys.publicKey;
     _privateKey = keys.privateKey;

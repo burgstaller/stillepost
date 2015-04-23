@@ -1,13 +1,11 @@
 <h1>Login</h1>
 <form>
-<input type="text" class="form-control"
-       ng-model="username"  required autofocus>
+    <input type="text" class="form-control" ng-model="username"  required autofocus>
     <hr>
     <label>Optional</label>
     <input type="text" class="form-control" placeholder="Public Key" ng-model="publicKey">
     <input type="text" class="form-control" placeholder="Private Key" ng-model="privateKey">
     <hr>
-<button class="btn btn-lg btn-primary btn-block" ng-click="login()" >
-    login
-</button>
+    <button class="btn btn-lg btn-primary btn-block" ng-if="loginEnabled && username" ng-click="login()" >login</button>
+    <button class="btn btn-lg btn-primary btn-block" ng-if="!loginEnabled || !username" disabled>login</button>
 </form>

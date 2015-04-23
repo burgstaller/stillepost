@@ -17,10 +17,10 @@
 }
 
 .messageContainer.ownMsg{
-    background-color: rgba(210, 210, 210, .6);
+    background-color: rgba(210, 210, 210, .4);
 }
 .messageContainer.partnerMsg{
-    background-color: rgba(30, 30, 255, .6);
+    background-color: rgba(30, 30, 255, .2);
 }
 .userentry{
     padding:3px;
@@ -54,4 +54,10 @@ dd{
     padding:4px;
     margin: 20px 0 10px 0;
     background-color: rgba(230, 230, 230, 0.4);
+}
+
+.chatEmptyText{
+    margin: 10px;
+    text-align: center;
+    font-weight: bold;
 }

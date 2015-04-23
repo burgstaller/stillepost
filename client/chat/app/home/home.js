@@ -86,5 +86,7 @@ angular.module('chat.home', ['ngRoute'])
   $scope.verify = function(user, verifyKey){
     user.verified = user.key === verifyKey;
   };
-
+  $scope.chatEmpty = function(){
+    return typeof($scope.currentChat.messages) === "undefined" || $scope.currentChat.messages.length === 0;
+  };
 }]);

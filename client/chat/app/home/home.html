@@ -3,11 +3,14 @@
   <div class="col-md-8">
     <div ng-if="activeChat()">
 
-      <h2>Currently Chatting with {{currentChat.user.username}}<span ng-if="currentChat.user.verified" class="verifiedIndicator"> - Verified</span></h2>
+      <h2>Currently Chatting with <b>{{currentChat.user.username}}</b><span ng-if="currentChat.user.verified" class="verifiedIndicator"> - Verified</span></h2>
 
       <div class="conversationContainer">
         <div class="messageContainer"  ng-class="{'ownMsg': m.username === username,'partnerMsg' : m.username !== username }" ng-repeat="m in currentChat.messages">
           ({{m.timestamp | date:"MM/dd/yyyy hh:mm:ss"}}) <b>{{m.username}}</b>: {{m.message}}
+        </div>
+        <div class="chatEmptyText" ng-if="chatEmpty()">
+          No messages exchanged yet
         </div>
 
         <form ng-submit="sendMessage()">
@@ -56,7 +59,7 @@
     </div>
   </div>
   <div class="col-md-4">
-    <h3>Logged in users</h3>
+    <h3>Logged in as <b>{{username}}</b></h3>
 
     <ul class="list-unstyled">
       <li ng-repeat="user in users">

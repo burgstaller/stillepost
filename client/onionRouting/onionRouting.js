@@ -147,6 +147,7 @@ window.stillepost.onion.onionRouting = (function() {
               _uuid = response.data;
               logToConsole("Successfully registered at directory server with uuid " + response.data);
               _heartBeat = setInterval(sendHeartbeat, stillepost.interfaces.config.heartbeatInterval);
+              document.dispatchEvent(new CustomEvent("chainReady"));
             } else
               public.onerror(errorTypes.chainError, {message: "Directory-Server did not respond with OK while registering, but with: "+response.msg})
           };
