@@ -36,7 +36,10 @@ window.stillepost.interfaces = (function () {
       maxRetransmissionCount: 5,
 
       // ChunkSize of a message - messages smaller than chunkSize are padded
-      chunkSize: 15000
+      chunkSize: 15000,
+
+      // default directoryServerUrl
+      directoryServerUrl: "http://127.0.0.1:42111"
     };
 
     /**
@@ -253,7 +256,7 @@ window.stillepost.interfaces = (function () {
 
     public.config = config;
 
-  //  public.initLib();
+    //public.initLib();
 
     return public;
 })();

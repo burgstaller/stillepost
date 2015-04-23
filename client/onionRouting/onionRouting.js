@@ -8,7 +8,6 @@ window.stillepost.onion.onionRouting = (function() {
     exitNode = window.stillepost.onion.exitNode,
     clientConnection = window.stillepost.onion.clientConnection,
     chainSize = 3,
-    directoryServerUrl = "http://127.0.0.1:42111",
     _masterChainCreated = null,
     _masterChainError = null,
     _isMasterChainCreated = false,
@@ -158,7 +157,7 @@ window.stillepost.onion.onionRouting = (function() {
             else
               public.onerror(errorTypes.chainError, {message: 'Could not connect to directory server', error: e.target});
           };
-          xhr.open("post", directoryServerUrl + "/node", true);
+          xhr.open("post", stillepost.interfaces.config.directoryServerUrl + "/node", true);
           xhr.send(JSON.stringify(entry));
         };
         registerAtDirectory();
@@ -178,7 +177,7 @@ window.stillepost.onion.onionRouting = (function() {
       xhr.onerror = function(e) {
           public.onerror(errorTypes.chainError, {message: 'Directory server sendHeartbeat FAILURE', error: e.target})
       };
-      xhr.open("put", directoryServerUrl + "/node/" + _uuid, true);
+      xhr.open("put", stillepost.interfaces.config.directoryServerUrl + "/node/" + _uuid, true);
       xhr.send();
   },
 
@@ -244,7 +243,7 @@ window.stillepost.onion.onionRouting = (function() {
         var errorMsg = e.target.statusText ? e.target.statusText : "Failed to load nodes from directory server";
         reject(errorMsg);
       };
-      xhr.open("get", directoryServerUrl + "/node/" + _uuid, true);
+      xhr.open("get", stillepost.interfaces.config.directoryServerUrl + "/node/" + _uuid, true);
       xhr.send();
     });
   },
@@ -762,7 +761,7 @@ window.stillepost.onion.onionRouting = (function() {
     xhr.onerror = function(e) {
       public.onerror({message: "Failed to logout from directory server ", error: e.target});
     };
-    xhr.open("post", directoryServerUrl + "/logout", true);
+    xhr.open("post", stillepost.interfaces.config.directoryServerUrl + "/logout", true);
     xhr.send(JSON.stringify(message));
     clearInterval(_heartBeat);
   };
