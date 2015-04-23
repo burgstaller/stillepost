@@ -9,6 +9,10 @@
   },
   "author": "gabriel",
   "license": "ISC",
+  "dependencies": {
+        "restify": "^2.8.5",
+        "uuid": "^2.0.1"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/burgstaller/stillepost"
