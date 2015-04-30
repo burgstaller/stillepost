@@ -17,10 +17,17 @@ angular.module('chat.login', ['ngRoute'])
   _publicKey = null,
   _privateKey = null,
   _chatObject = null,
+  _chainBuilt = false,
   _usermap = null;
+
 
   $scope.loginEnabled = false;
   document.addEventListener("chainReady", function() {
+    $scope.loginEnabled = true;
+    $scope.$apply();
+  });
+  document.addEventListener("loggedOut", function() {
+    _chainBuilt = true;
     $scope.loginEnabled = true;
     $scope.$apply();
   });
@@ -39,25 +46,42 @@ angular.module('chat.login', ['ngRoute'])
       params.publicKey = $scope.publicKey;
       crypto.subtle.importKey("jwk", JSON.parse($scope.privateKey), cu.rsaAlgorithm, true, ["decrypt", "unwrapKey"]).then(function(impKey) {
         params.privateKey = impKey;
-        oi.buildChain().then(function(){
+        if(_chainBuilt === true){
           ChatServer.init(params, function(chatObject){
             console.log("switching to home");
             $location.path("home");
             $scope.$apply();
           });
-        });
+        } else {
+          oi.buildChain().then(function(){
+            ChatServer.init(params, function(chatObject){
+              console.log("switching to home");
+              $location.path("home");
+              $scope.$apply();
+            });
+          });
+        }
       });
-    }else{
+    }
+    else{
       // use genereated keys
       params.publicKey = _publicKey;
       params.privateKey = _privateKey;
-      oi.buildChain().then(function(){
+      if(_chainBuilt === true){
         ChatServer.init(params, function(chatObject){
           console.log("switching to home");
           $location.path("home");
           $scope.$apply();
         });
-      });
+      } else {
+        oi.buildChain().then(function () {
+          ChatServer.init(params, function (chatObject) {
+            console.log("switching to home");
+            $location.path("home");
+            $scope.$apply();
+          });
+        });
+      }
     }
 
 

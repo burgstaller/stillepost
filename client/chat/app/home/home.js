@@ -8,7 +8,7 @@ angular.module('chat.home', ['ngRoute'])
     controller: 'ChatHomeCtrl'
   });
 }])
-.controller('ChatHomeCtrl', ['$scope', 'ChatServer', '$interval', function($scope, ChatServer, $interval) {
+.controller('ChatHomeCtrl', ['$scope', 'ChatServer', '$interval', '$location', function($scope, ChatServer, $interval, $location) {
   var _chatObject = ChatServer.getChatObject(),
       _chatHistory = {},
       _placeholder = "type message";
@@ -63,6 +63,20 @@ angular.module('chat.home', ['ngRoute'])
   };
   _chatObject.onUserListUpdate = function(users){
     //console.log("UPDATED userlist");
+    for(var u in users){
+      if (users.hasOwnProperty(u)){
+        // if user is not registered on server anymore, he disconnected
+        if(typeof(users[u].disconnected) !== "undefined" && users[u].disconnected && (typeof(_chatHistory[u].disconnectHandled) === "undefined" || _chatHistory[u].disconnectHandled === false)){
+          _chatObject.onReceiveMessage("User disconnected", users[u]);
+          _chatHistory[u].disconnectHandled = true;
+        }
+        if(typeof(users[u].reconnected) !== "undefined" && users[u].reconnected === true){
+          _chatObject.onReceiveMessage("User reconnected", users[u]);
+          users[u].reconnected = false;
+          _chatHistory[u].disconnectHandled = false;
+        }
+      }
+    }
   };
 
 
@@ -72,6 +86,16 @@ angular.module('chat.home', ['ngRoute'])
 
   $scope.refreshUsers = function(){
     _chatObject.updateUserList();
+  };
+
+  $scope.logout = function(){
+    ChatServer.logout(function(response){
+      logToConsole("successfully logged out", response);
+      logToConsole("switching to login");
+      $location.path("login");
+      $scope.$apply();
+      document.dispatchEvent(new CustomEvent("loggedOut"));
+    });
   };
 
   $scope.activeChat = function(){

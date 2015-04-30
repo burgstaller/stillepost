@@ -18,6 +18,7 @@ chatServices.factory('ChatServer', ['$resource',
           _connections = {},
           _heartbeatInterval = 3000,
           _chatObject = null,
+          _loggedIn = false,
           oi = null,
           cu = null;
 
@@ -30,6 +31,7 @@ chatServices.factory('ChatServer', ['$resource',
               _sessionKey = response.data.sessionKey;
               cu.hash(_publicKey).then(function(data){
                   _publicKeyHash = data;
+                  _loggedIn = true;
                   if(typeof(successCallback) !== "undefined")
                       successCallback(response);
               });
@@ -67,10 +69,30 @@ chatServices.factory('ChatServer', ['$resource',
                   successCallback(response);
           };
           xhr.onerror = function(e) {
-              console.log("chat: sendHeartbeat FAILURE:");
+              console.log("chat: sendHeartbeat FAILURE, disconnected:");
               console.log(e.target);
+              _loggedIn = false;
           };
           xhr.open("put", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash).replace(/%00/g, "customnullbyte")+"?sessionKey="+encodeURIComponent(_sessionKey), true);
+          xhr.send();
+      }
+
+      function logout(successCallback, errorCallback){
+          var xhr = new XMLHttpRequest();
+          xhr.onload = function () {
+              var response = JSON.parse(this.responseText);
+              //console.log("chat: logout SUCCESS");
+              _loggedIn = false;
+              if(typeof(successCallback) !== "undefined")
+                  successCallback(response);
+          };
+          xhr.onerror = function(e) {
+              console.log("chat: logout FAILURE:");
+              console.log(e.target);
+              if(typeof(errorCallback) !== "undefined")
+                  errorCallback(response);
+          };
+          xhr.open("delete", _chatServerUrl + "/user/"+encodeURIComponent(_publicKeyHash).replace(/%00/g, "customnullbyte")+"?sessionKey="+encodeURIComponent(_sessionKey), true);
           xhr.send();
       }
 
@@ -89,6 +111,22 @@ chatServices.factory('ChatServer', ['$resource',
                               _users[u][attr] = newUsers[u][attr];
                           }
                       }
+
+                      // check for reconnect
+                      if(typeof(_users[u].disconnected) !== "undefined" && _users[u].disconnected === true){
+                          _users[u].disconnected = false;
+                          _users[u].reconnected = true;
+                          _users[u].reestablishConnection = true;
+                      }
+                  }
+              }
+          }
+          // check for disconnected users
+          for(var u in _users){
+              if (_users.hasOwnProperty(u)){
+                  // if user is not registered on server anymore, he disconnected
+                  if(typeof(newUsers[u]) === "undefined"){
+                      _users[u].disconnected = true;
                   }
               }
           }
@@ -123,6 +161,9 @@ chatServices.factory('ChatServer', ['$resource',
               return _privateKey
           },
 
+          logout: logout,
+          login: login,
+
           init: function(params, successCallback){
               // read params
               if(typeof(params) !== "object"){
@@ -151,21 +192,32 @@ chatServices.factory('ChatServer', ['$resource',
               login(function(response){
 
                   // start heartbeats
-                  setInterval(sendHeartbeat, _heartbeatInterval);
+                  setInterval(function(){
+                          if(_loggedIn){
+                              sendHeartbeat();
+                          }
+                      }, _heartbeatInterval);
                   _chatObject = {
                       // methods
                       updateUserList: function () {
-                          getUserList(function(response){
-                              //_users = response.data;
-                              mergeNewUsers(response.data);
 
-                              _chatObject.onUserListUpdate(_users);
-                          });
+                          if(_loggedIn){
+                              getUserList(function(response){
+                                  //_users = response.data;
+                                  mergeNewUsers(response.data);
+
+                                  _chatObject.onUserListUpdate(_users);
+                              });
+                          }
+
                       },
                       sendMessage: function(user, message){
-                          if(typeof(_connections[user.hash]) === "undefined"){
+                          if(typeof(_connections[user.hash]) === "undefined" || (typeof(user.reestablishConnection) !== "undefined" && user.reestablishConnection)){
                               _connections[user.hash] = oi.createClientConnection(user.socket.address, user.socket.port, user.chainid, user.key, true);
                               _connections[user.hash].onmessage = function(msg){_chatObject.onReceiveMessage(msg, user);};
+                              if(typeof(user.reestablishConnection) !== "undefined"){
+                                  user.reestablishConnection = false;
+                              }
                           }
                           _connections[user.hash].send(message, function() {console.log('successcallback called');},
                               function() {console.error('errorcallback called');});
@@ -196,9 +248,29 @@ chatServices.factory('ChatServer', ['$resource',
                                   _connections[publicKeyHash].onmessage = function(msg){_chatObject.onReceiveMessage(msg, _users[publicKeyHash]);};
                               }
                           });
+                      },
+                      onOnionNotification: function(type, notificationObject){
+                          logToConsole("received oninion notificatoin", type, notificationObject);
+                          // if renew happened, we have to reregister on server
+                          if(type === "renew"){
+                              _chainId = notificationObject.data.chainId;
+                              _socket = notificationObject.data.socket;
+                              logout(function(response){
+                                  logToConsole("successfully logged out correctly");
+                                  login(function(response){
+                                      logToConsole("successfully logged in again");
+                                  });
+                              }, function(response){
+                                  logToConsole("failed to log out, probably timed out in betwen");
+                                  login(function(response){
+                                      logToConsole("successfully logged in again");
+                                  });
+                              });
+                          }
                       }
                   };
                   oi.onClientConnection = _chatObject.onClientConnected;
+                  oi.onionlayer.onnotification = _chatObject.onOnionNotification;
                   if(typeof(successCallback) === "function")
                       successCallback(_chatObject);
               });
