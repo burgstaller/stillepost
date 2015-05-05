@@ -451,7 +451,7 @@ window.stillepost.onion.onionRouting = (function() {
           _isMasterChainCreated = true;
           if (_curCreateChainTryCount > 0) {
             public.onnotification(notificationTypes.renew, {message: 'Renewed chain', data: public.getPublicChainInformation()});
-            clientConnection.onRenewChain(public.getPublicChainInformation());
+            clientConnection.onRenewChain(public.getPublicChainInformation(), stillepost.interfaces.config.autoReconnect);
           }
           _curCreateChainTryCount = 0;
         } else {

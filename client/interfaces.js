@@ -39,7 +39,10 @@ window.stillepost.interfaces = (function () {
       chunkSize: 15000,
 
       // default directoryServerUrl
-      directoryServerUrl: "http://127.0.0.1:42111"
+      directoryServerUrl: "http://127.0.0.1:42111",
+
+      // after chain renew occurs, automatically message all connections in local map
+      autoReconnect: false
     };
 
     /**

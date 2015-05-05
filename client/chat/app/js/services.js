@@ -105,6 +105,17 @@ chatServices.factory('ChatServer', ['$resource',
                   if(typeof(_users[u]) === "undefined"){
                       _users[u] = newUsers[u];
                   } else {
+                      // check for reconnect
+                      // a reconnect happened when we witnessed a logout and login (flag disconnected)
+                      // or when one of the connection properties changed (address, port, or chainid)
+                      if((typeof(_users[u].disconnected) !== "undefined" && _users[u].disconnected === true)||
+                        (_users[u].socket.address !== newUsers[u].socket.address ||
+                        _users[u].socket.port !== newUsers[u].socket.port ||
+                        _users[u].socket.chainid !== newUsers[u].socket.chainid)){
+                          _users[u].disconnected = false;
+                          _users[u].reconnected = true;
+                          _users[u].reestablishConnection = true;
+                      }
                       // merge attributes
                       for(var attr in newUsers[u]){
                           if (newUsers[u].hasOwnProperty(attr)){
@@ -112,12 +123,6 @@ chatServices.factory('ChatServer', ['$resource',
                           }
                       }
 
-                      // check for reconnect
-                      if(typeof(_users[u].disconnected) !== "undefined" && _users[u].disconnected === true){
-                          _users[u].disconnected = false;
-                          _users[u].reconnected = true;
-                          _users[u].reestablishConnection = true;
-                      }
                   }
               }
           }

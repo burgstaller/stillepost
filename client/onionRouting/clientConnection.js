@@ -340,20 +340,24 @@ window.stillepost.onion.clientConnection = (function() {
     }
   }
 
-  public.onRenewChain = function(pubInfo) {
-    for (var connectionId in clientConnections) {
-      if (clientConnections.hasOwnProperty(connectionId)) {
-        var connection = clientConnections[connectionId];
-        logToConsole('sending renew chain message with pubInfo ', connection, pubInfo);
+  public.onRenewChain = function(pubInfo, autoReconnect) {
 
-        var seqNum = connection.seqNum++,
-          msgContent = {connectionState: connectionState.renew, pubInfo: pubInfo};
-        connection.sendBuffer[seqNum] = {
-          message: msgContent,
-          count: 0
-        };
-        setTimeout(wrapFunction(handleClientMessageTimeout, this, [connection, seqNum]), stillepost.interfaces.config.clientMessageTimeout);
-        sendEncryptedMessage(msgContent, connection, seqNum);
+    // try to reconnect disconnected chains
+    if(autoReconnect){
+      for (var connectionId in clientConnections) {
+        if (clientConnections.hasOwnProperty(connectionId)) {
+          var connection = clientConnections[connectionId];
+          logToConsole('sending renew chain message with pubInfo ', connection, pubInfo);
+
+          var seqNum = connection.seqNum++,
+            msgContent = {connectionState: connectionState.renew, pubInfo: pubInfo};
+          connection.sendBuffer[seqNum] = {
+            message: msgContent,
+            count: 0
+          };
+          setTimeout(wrapFunction(handleClientMessageTimeout, this, [connection, seqNum]), stillepost.interfaces.config.clientMessageTimeout);
+          sendEncryptedMessage(msgContent, connection, seqNum);
+        }
       }
     }
   };
