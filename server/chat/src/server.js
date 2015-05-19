@@ -1,13 +1,16 @@
 var restify = require('restify'),
     uuid = require('uuid'),
-    crypto = require('crypto');
+    crypto = require('crypto'),
+    fs = require("fs");
 
 var heartbeatTimeout = 10000,
     heartbeatInterval = 5000;
 // Server
 var server = restify.createServer({
     name: 'chat-server',
-    version: '1.0.0'
+    version: '1.0.0',
+    key: fs.readFileSync('server-key.pem'),
+    certificate: fs.readFileSync('server-cert.pem')
 });
 server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());

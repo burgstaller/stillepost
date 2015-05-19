@@ -1,12 +1,18 @@
 var WebSocketServer = require('websocket').server;
-var http = require('http');
+var https = require('https'),
+  http = require('http'),
+  crypto = require('crypto'),
+  fs = require("fs");
 
-// todo: create https server
-var server = http.createServer(function(request, response) {
+var server = https.createServer({
+  key: fs.readFileSync('server-key.pem'),
+  cert: fs.readFileSync('server-cert.pem')
+}, function(request, response) {
     console.log((new Date()) + ' Received request for ' + request.url);
     response.writeHead(404);
     response.end();
 });
+
 server.listen(8081, function() {
     console.log((new Date()) + ' Server is listening on port 8081');
 });

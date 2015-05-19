@@ -182,7 +182,7 @@ chatServices.factory('ChatServer', ['$resource',
                   _privateKey = params.privateKey;
                   _publicKey = params.publicKey;
               }
-              _chatServerUrl = typeof(params.chatServerUrl) !== "string" ? "http://127.0.0.1:42112" : params.chatServerUrl;
+              _chatServerUrl = typeof(params.chatServerUrl) !== "string" ? "https://127.0.0.1:42112" : params.chatServerUrl;
 
               // set vars
               cu = window.stillepost.cryptoUtils;
