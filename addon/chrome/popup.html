@@ -1,18 +1,47 @@
 <!DOCTYPE html>
 <html>
-<head lang="en">
-    <meta charset="UTF-8">
-    <title></title>
-    <script type="text/javascript" src="popup.js"></script>
-</head>
-<div id="download">
-    <input type="text" id="fileurl" value="http://"> <button id="filedownload">Download</button>
-</div>
-<div id="directory">
-    <input type="text" id="directoryurl" value="http://127.0.0.1:42111"> <button id="setdirectory">Set Directory Server</button>
-</div>
-<div>
-    <button id="on">Node On</button>
-    <button id="off">Node Off</button>
-</div>
+    <head lang="en">
+        <meta charset="UTF-8">
+        <title></title>
+        <script type="text/javascript" src="popup.js"></script>
+        <link rel="stylesheet" href="style.css">
+        <script type="text/javascript" src="jquery-2.1.4.min.js"></script>
+        <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
+        <!-- Latest compiled and minified JavaScript -->
+        <script src="bootstrap/js/bootstrap.min.js"></script>
+    </head>
+    <body>
+        <div class="container-fluid">
+            <div class="form-horizontal">
+                <div class="form-group download">
+                    <label for="fileurl" class="col-xs-4 control-label">Download file</label>
+                    <div class="col-xs-8">
+                        <input type="text" class="form-control" id="fileurl" placeholder="http://">
+                    </div>
+                </div>
+                <div class="form-group download">
+                    <div class="col-xs-12">
+                        <button class="btn btn-default" id="filedownload">Download</button>
+                    </div>
+                </div>
+                <div class="form-group directory">
+                    <label for="directoryurl" class="col-xs-4 control-label">Directory server</label>
+                    <div class="col-xs-8">
+                        <input type="text" class="form-control" id="directoryurl" value="https://127.0.0.1:42111">
+                    </div>
+                </div>
+                <div class="form-group directory">
+                    <div class="col-xs-5">
+                        <button class="btn btn-default" id="setdirectory">Set Directory Server</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="col-xs-11">
+                        <button class="btn btn-default" id="on">Node On</button>
+                        <button class="btn btn-default" id="off">Node Off</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
 </html>

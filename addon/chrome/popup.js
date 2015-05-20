@@ -45,15 +45,15 @@ window.onload = function(){
 };
 
 function showOff(){
-    document.getElementById("directory").style.display = "block";
-    document.getElementById("download").style.display = "none";
+    $(".directory").css('display', 'block');
+    $(".download").css('display', 'none');
     document.getElementById("on").style.display = "block";
     document.getElementById("off").style.display = "none";
 }
 
 function showOn(){
-    document.getElementById("directory").style.display = "none";
-    document.getElementById("download").style.display = "block";
+    $(".directory").css('display', 'none');
+    $(".download").css('display', 'block');
     document.getElementById("on").style.display = "none";
     document.getElementById("off").style.display = "block";
 }
