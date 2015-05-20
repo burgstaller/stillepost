@@ -10,7 +10,6 @@ angular.module('chat.login', ['ngRoute'])
 }])
 
 .controller('ChatLoginCtrl', ['$scope', '$location', 'ChatServer', function($scope, $location, ChatServer) {
-
   var oi = window.stillepost.interfaces,
   chat = window.stillepost.chat,
   cu = window.stillepost.cryptoUtils,
@@ -37,6 +36,12 @@ angular.module('chat.login', ['ngRoute'])
     _privateKey = keys.privateKey;
   });
 
+  /**
+   * If a username was supplied and the chain finished building,
+   * call the init method of the chatServer service to register the user and fetch the current userlist
+   *
+   * The required keypair is either auto-generated or supplied by the user
+   */
   $scope.login = function(){
     var params = {};
     params.username = $scope.username;
