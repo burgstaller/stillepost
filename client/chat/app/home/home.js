@@ -98,6 +98,10 @@ angular.module('chat.home', ['ngRoute'])
     });
   };
 
+  $scope.sendFile = function(){
+    console.log("trying to send file to "+$scope.currentChat.user);
+  };
+
   $scope.activeChat = function(){
     return typeof($scope.currentChat.user) !== 'undefined';
   };
