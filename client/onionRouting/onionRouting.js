@@ -5,7 +5,6 @@ window.stillepost.onion.onionRouting = (function() {
     cu = window.stillepost.cryptoUtils,
     webrtc = window.stillepost.webrtc,
     intermediateNode = window.stillepost.onion.intermediateNode,
-    exitNode = window.stillepost.onion.exitNode,
     clientConnection = window.stillepost.onion.clientConnection,
     chainSize = 3,
     _masterChainCreated = null,
@@ -167,6 +166,14 @@ window.stillepost.onion.onionRouting = (function() {
       public.onerror(errorTypes.chainError, {message: 'Error generating public RSA Key', error: err});
     });
   },
+
+  initOnionClient = function(){
+        cu.getGeneratedPublicKey().then(function(pubKey) {
+            logToConsole("Generated pubKey: " + pubKey);
+        }).catch(function(err) {
+            public.onerror(errorTypes.chainError, {message: 'Error generating public RSA Key', error: err});
+        });
+    },
 
   sendHeartbeat = function(){
       var xhr = new XMLHttpRequest();
@@ -679,13 +686,15 @@ window.stillepost.onion.onionRouting = (function() {
     stillepost.interfaces.onionlayer.onnotification(type, notification);
   };
 
-  public.init = function() {
+  public.init = function(client) {
     cu = window.stillepost.cryptoUtils;
     webrtc = window.stillepost.webrtc;
-    exitNode = window.stillepost.onion.exitNode;
     intermediateNode = window.stillepost.onion.intermediateNode;
     clientConnection = window.stillepost.onion.clientConnection;
-    initOnionSetup();
+    if(client)
+        initOnionClient();
+    else
+        initOnionSetup();
   };
 
   public.getNodeConnectionCount = function(remoteAddress, remotePort) {

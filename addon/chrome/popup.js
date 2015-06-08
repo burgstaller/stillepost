@@ -27,11 +27,17 @@ function on(){
     });
 };
 
+function chat(){
+    chrome.tabs.create({'url': chrome.extension.getURL('app/index.html')}, function(tab) {
+    });
+}
+
 window.onload = function(){
     document.getElementById("on").addEventListener("click",on);
     document.getElementById("off").addEventListener("click",off);
     document.getElementById("filedownload").addEventListener("click",fileDownload);
     document.getElementById("setdirectory").addEventListener("click",setDirectory);
+    document.getElementById("chat").addEventListener("click", chat);
 
     chrome.runtime.getBackgroundPage(function(backgroundPage){
         if(backgroundPage.nodeOn){

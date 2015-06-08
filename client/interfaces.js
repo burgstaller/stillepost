@@ -39,8 +39,8 @@ window.stillepost.interfaces = (function () {
       chunkSize: 15000,
 
       // default directoryServerUrl
-      //directoryServerUrl: "http://127.0.0.1:42111",
-      directoryServerUrl: "https://127.0.0.1:42111",
+      directoryServerUrl: "https://10.2.0.9:42111",
+      //directoryServerUrl: "https://127.0.0.1:42111",
 
       // after chain renew occurs, automatically message all connections in local map
       autoReconnect: false
@@ -55,7 +55,7 @@ window.stillepost.interfaces = (function () {
         intermediateNode = window.stillepost.onion.intermediateNode;
         messageHandler = window.stillepost.onion.messageHandler;
         clientConnection = window.stillepost.onion.clientConnection;
-        onion.init();
+        onion.init(false);
         exitNode.init();
         intermediateNode.init();
         clientConnection.init();
@@ -260,7 +260,7 @@ window.stillepost.interfaces = (function () {
 
     public.config = config;
 
-    //public.initLib();
+    public.initLib();
 
     return public;
 })();
